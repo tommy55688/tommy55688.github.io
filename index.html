@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>星展信用卡回饋計算器 (eco / 傳說對決)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Phosphor Icons (圖示) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, 'LiHei Pro', 'Microsoft JhengHei', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* 隱藏原生數字輸入框的上下箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.3s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+    </style>
+</head>
+<body class="text-gray-800 antialiased p-4 md:p-8">
+
+<div id="app" class="max-w-6xl mx-auto">
+    <!-- 標題與簡介 -->
+    <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 border-t-4 border-red-600">
+        <div class="flex items-center justify-between mb-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+                <i class="ph ph-credit-card mr-3 text-red-600"></i>
+                星展信用卡回饋計算器
+            </h1>
+            <button @click="exportToExcel" class="hidden md:flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                <i class="ph ph-file-xls mr-2 text-xl"></i>
+                匯出 Excel
+            </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 bg-gray-50 p-4 rounded-xl">
+            <div>
+                <strong class="text-red-600 text-base mb-1 block">💎 星展 eco 永續卡</strong>
+                <ul class="list-disc pl-5 space-y-1">
+                    <li>基本回饋：1% 無上限 (依結帳週期計算)</li>
+                    <li>加碼回饋：9% 上限 1000 點 (依日曆月計算)</li>
+                    <li>每月加碼最高可刷額度：<span class="font-bold text-gray-800">11,111</span> 元</li>
+                    <li>加碼回饋入帳日：次次月 1 日</li>
+                </ul>
+            </div>
+            <div>
+                <strong class="text-red-600 text-base mb-1 block">💎 星展 傳說對決聯名卡</strong>
+                <ul class="list-disc pl-5 space-y-1">
+                    <li>基本回饋：0.2% 無上限 (依結帳週期計算)</li>
+                    <li>加碼回饋：9.8% 上限 1000 點 (依日曆月計算)</li>
+                    <li>每月加碼最高可刷額度：<span class="font-bold text-gray-800">11,363</span> 元</li>
+                    <li>加碼回饋入帳日：次次月 1 日</li>
+                </ul>
+            </div>
+            <div class="md:col-span-2 mt-2 pt-2 border-t border-gray-200 text-xs flex flex-wrap gap-4">
+                <span>📅 結帳週期：每月 12 日 ~ 下月 11 日 (結帳日 11 日)</span>
+                <span>⏳ 回饋活動有效至：<span class="font-bold text-red-600">2026/06/30</span></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-col lg:flex-row gap-8">
+        <!-- 左側：新增消費紀錄 -->
+        <div class="lg:w-1/3">
+            <div class="bg-white rounded-2xl shadow-lg p-6 sticky top-8">
+                <h2 class="text-xl font-bold mb-6 flex items-center text-gray-800">
+                    <i class="ph ph-plus-circle mr-2 text-red-600"></i> 新增消費紀錄
+                </h2>
+                
+                <form @submit.prevent="addRecord" class="space-y-5">
+                    <!-- 卡片選擇 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">選擇卡片</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="cursor-pointer">
+                                <input type="radio" v-model="form.card" value="eco" class="peer sr-only">
+                                <div class="text-center px-4 py-3 rounded-xl border-2 peer-checked:border-red-600 peer-checked:bg-red-50 peer-checked:text-red-700 hover:bg-gray-50 transition-colors font-medium">
+                                    星展 eco 卡
+                                </div>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" v-model="form.card" value="aov" class="peer sr-only">
+                                <div class="text-center px-4 py-3 rounded-xl border-2 peer-checked:border-red-600 peer-checked:bg-red-50 peer-checked:text-red-700 hover:bg-gray-50 transition-colors font-medium">
+                                    傳說對決卡
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 消費日期 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">消費日期</label>
+                        <input type="date" v-model="form.date" required max="2026-06-30"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
+                        <p class="text-xs text-gray-500 mt-1">最晚至 2026/06/30</p>
+                    </div>
+
+                    <!-- 消費金額 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">消費金額 (NT$)</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">$</span>
+                            <input type="number" v-model="form.amount" required min="1" placeholder="輸入金額"
+                                class="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
+                        </div>
+                    </div>
+
+                    <!-- 備註 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">備註 (選填)</label>
+                        <input type="text" v-model="form.desc" placeholder="例如：PChome購物"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
+                    </div>
+
+                    <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center">
+                        <i class="ph ph-check-circle mr-2 text-xl"></i> 加入紀錄
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 右側：資料儀表板 -->
+        <div class="lg:w-2/3">
+            <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+                <!-- 頁籤選單 -->
+                <div class="flex border-b border-gray-200 bg-gray-50">
+                    <button @click="activeTab = 'eco'" :class="['flex-1 py-4 px-6 text-center font-bold text-sm sm:text-base transition-colors border-b-2', activeTab === 'eco' ? 'border-red-600 text-red-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100']">
+                        💳 星展 eco 卡
+                    </button>
+                    <button @click="activeTab = 'aov'" :class="['flex-1 py-4 px-6 text-center font-bold text-sm sm:text-base transition-colors border-b-2', activeTab === 'aov' ? 'border-red-600 text-red-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100']">
+                        🎮 傳說對決卡
+                    </button>
+                    <button @click="activeTab = 'list'" :class="['flex-1 py-4 px-6 text-center font-bold text-sm sm:text-base transition-colors border-b-2', activeTab === 'list' ? 'border-red-600 text-red-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100']">
+                        📝 所有明細
+                    </button>
+                </div>
+
+                <!-- 內容區域 -->
+                <div class="p-6">
+                    
+                    <!-- 星展 eco 面板 -->
+                    <div v-show="activeTab === 'eco'">
+                        <div class="mb-8">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="ph ph-calendar-star mr-2 text-xl text-yellow-500"></i>
+                                日曆月加碼回饋 (9%)
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-gray-700 text-sm">
+                                            <th class="p-3 rounded-tl-lg font-medium">消費月份</th>
+                                            <th class="p-3 font-medium text-right">累積消費</th>
+                                            <th class="p-3 font-medium text-right">剩餘可刷額度</th>
+                                            <th class="p-3 font-medium text-center">達 1000 點上限</th>
+                                            <th class="p-3 font-medium text-right">預估加碼點數</th>
+                                            <th class="p-3 rounded-tr-lg font-medium text-center">回饋入帳日</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-if="ecoMonthlyStats.length === 0">
+                                            <td colspan="6" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
+                                        </tr>
+                                        <tr v-for="stat in ecoMonthlyStats" :key="stat.month" class="hover:bg-gray-50">
+                                            <td class="p-3 font-medium">{{ stat.month }}</td>
+                                            <td :class="['p-3 text-right font-bold', stat.isExceeded ? 'text-red-600' : 'text-gray-800']">
+                                                {{ formatMoney(stat.total) }}
+                                            </td>
+                                            <td class="p-3 text-right text-green-600 font-bold">
+                                                {{ formatMoney(stat.remaining) }}
+                                            </td>
+                                            <td class="p-3 text-center">
+                                                <span v-if="stat.isCapped" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">是</span>
+                                                <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">否</span>
+                                            </td>
+                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
+                                            <td class="p-3 text-center text-gray-600 text-sm">{{ stat.payoutDate }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="ph ph-arrows-clockwise mr-2 text-xl text-blue-500"></i>
+                                結帳週期基本回饋 (1%)
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-gray-700 text-sm">
+                                            <th class="p-3 rounded-tl-lg font-medium">結帳週期</th>
+                                            <th class="p-3 font-medium">本期結帳日</th>
+                                            <th class="p-3 font-medium text-right">累積消費</th>
+                                            <th class="p-3 rounded-tr-lg font-medium text-right">預估基本點數</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-if="ecoBillingStats.length === 0">
+                                            <td colspan="4" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
+                                        </tr>
+                                        <tr v-for="stat in ecoBillingStats" :key="stat.cycleId" class="hover:bg-gray-50">
+                                            <td class="p-3 text-sm">{{ stat.cycleName }}</td>
+                                            <td class="p-3 text-gray-600 text-sm">{{ stat.billingDate }}</td>
+                                            <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(stat.total) }}</td>
+                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 傳說對決 面板 -->
+                    <div v-show="activeTab === 'aov'">
+                        <div class="mb-8">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="ph ph-calendar-star mr-2 text-xl text-yellow-500"></i>
+                                日曆月加碼回饋 (9.8%)
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-gray-700 text-sm">
+                                            <th class="p-3 rounded-tl-lg font-medium">消費月份</th>
+                                            <th class="p-3 font-medium text-right">累積消費</th>
+                                            <th class="p-3 font-medium text-right">剩餘可刷額度</th>
+                                            <th class="p-3 font-medium text-center">達 1000 點上限</th>
+                                            <th class="p-3 font-medium text-right">預估加碼點數</th>
+                                            <th class="p-3 rounded-tr-lg font-medium text-center">回饋入帳日</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-if="aovMonthlyStats.length === 0">
+                                            <td colspan="6" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
+                                        </tr>
+                                        <tr v-for="stat in aovMonthlyStats" :key="stat.month" class="hover:bg-gray-50">
+                                            <td class="p-3 font-medium">{{ stat.month }}</td>
+                                            <td :class="['p-3 text-right font-bold', stat.isExceeded ? 'text-red-600' : 'text-gray-800']">
+                                                {{ formatMoney(stat.total) }}
+                                            </td>
+                                            <td class="p-3 text-right text-green-600 font-bold">
+                                                {{ formatMoney(stat.remaining) }}
+                                            </td>
+                                            <td class="p-3 text-center">
+                                                <span v-if="stat.isCapped" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">是</span>
+                                                <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">否</span>
+                                            </td>
+                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
+                                            <td class="p-3 text-center text-gray-600 text-sm">{{ stat.payoutDate }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="ph ph-arrows-clockwise mr-2 text-xl text-blue-500"></i>
+                                結帳週期基本回饋 (0.2%)
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-gray-700 text-sm">
+                                            <th class="p-3 rounded-tl-lg font-medium">結帳週期</th>
+                                            <th class="p-3 font-medium">本期結帳日</th>
+                                            <th class="p-3 font-medium text-right">累積消費</th>
+                                            <th class="p-3 rounded-tr-lg font-medium text-right">預估基本點數</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <tr v-if="aovBillingStats.length === 0">
+                                            <td colspan="4" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
+                                        </tr>
+                                        <tr v-for="stat in aovBillingStats" :key="stat.cycleId" class="hover:bg-gray-50">
+                                            <td class="p-3 text-sm">{{ stat.cycleName }}</td>
+                                            <td class="p-3 text-gray-600 text-sm">{{ stat.billingDate }}</td>
+                                            <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(stat.total) }}</td>
+                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 所有明細 面板 -->
+                    <div v-show="activeTab === 'list'">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-bold text-gray-800">紀錄總覽</h3>
+                            <button @click="exportToExcel" class="md:hidden flex items-center bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                                <i class="ph ph-file-xls mr-1 text-lg"></i> 匯出
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-100 text-gray-700 text-sm">
+                                        <th class="p-3 rounded-tl-lg font-medium">卡別</th>
+                                        <th class="p-3 font-medium">日期</th>
+                                        <th class="p-3 font-medium">備註</th>
+                                        <th class="p-3 font-medium text-right">金額</th>
+                                        <th class="p-3 rounded-tr-lg font-medium text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    <tr v-if="sortedRecords.length === 0">
+                                        <td colspan="5" class="p-6 text-center text-gray-400">尚無任何消費紀錄</td>
+                                    </tr>
+                                    <transition-group name="fade">
+                                        <tr v-for="record in sortedRecords" :key="record.id" class="hover:bg-gray-50">
+                                            <td class="p-3">
+                                                <span :class="['px-2 py-1 rounded text-xs font-bold', record.card === 'eco' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700']">
+                                                    {{ record.card === 'eco' ? 'eco卡' : '傳說卡' }}
+                                                </span>
+                                            </td>
+                                            <td class="p-3 text-sm">{{ record.date }}</td>
+                                            <td class="p-3 text-sm text-gray-600">{{ record.desc || '-' }}</td>
+                                            <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(record.amount) }}</td>
+                                            <td class="p-3 text-center">
+                                                <button @click="deleteRecord(record.id)" class="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-50 transition-colors" title="刪除">
+                                                    <i class="ph ph-trash text-lg"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </transition-group>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted, watch } = Vue;
+
+    // 常數設定
+    const ECO_LIMIT = 11111;
+    const ECO_BONUS_RATE = 0.09;
+    const ECO_BASE_RATE = 0.01;
+    
+    const AOV_LIMIT = 11363;
+    const AOV_BONUS_RATE = 0.098;
+    const AOV_BASE_RATE = 0.002;
+
+    const MAX_BONUS_POINTS = 1000;
+
+    createApp({
+        setup() {
+            // 狀態
+            const records = ref([]);
+            const activeTab = ref('eco');
+            const form = ref({
+                card: 'eco',
+                date: new Date().toISOString().split('T')[0], // 預設今天
+                amount: '',
+                desc: ''
+            });
+
+            // 初始化：從 localStorage 讀取資料
+            onMounted(() => {
+                const saved = localStorage.getItem('dbs_rewards_data');
+                if (saved) {
+                    try {
+                        records.value = JSON.parse(saved);
+                    } catch (e) {
+                        console.error('Failed to parse saved data');
+                    }
+                }
+            });
+
+            // 監聽資料變化並儲存
+            watch(records, (newVal) => {
+                localStorage.setItem('dbs_rewards_data', JSON.stringify(newVal));
+            }, { deep: true });
+
+            // 工具函數
+            const formatMoney = (val) => {
+                return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(val);
+            };
+
+            const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+            // 推算結帳週期資訊
+            const getBillingCycleInfo = (dateStr) => {
+                const d = new Date(dateStr);
+                let year = d.getFullYear();
+                let month = d.getMonth() + 1; // 1-12
+                let date = d.getDate();
+
+                // 結帳日為 11 號，週期為 12 號到次月 11 號
+                // 如果日期大於等於 12，則屬於下一個月的結帳週期
+                if (date >= 12) {
+                    month += 1;
+                    if (month > 12) {
+                        month = 1;
+                        year += 1;
+                    }
+                }
+
+                // 計算週期起迄
+                let startMonth = month - 1;
+                let startYear = year;
+                if (startMonth === 0) {
+                    startMonth = 12;
+                    startYear -= 1;
+                }
+
+                const cycleId = `${year}-${String(month).padStart(2, '0')}`;
+                const cycleName = `${startYear}/${String(startMonth).padStart(2, '0')}/12 ~ ${year}/${String(month).padStart(2, '0')}/11`;
+                const billingDate = `${year}/${String(month).padStart(2, '0')}/11`;
+
+                return { cycleId, cycleName, billingDate };
+            };
+
+            // 推算加碼回饋入帳日 (次次月 1 日)
+            const getPayoutDate = (year, month) => {
+                let pMonth = month + 2;
+                let pYear = year;
+                if (pMonth > 12) {
+                    pMonth -= 12;
+                    pYear += 1;
+                }
+                return `${pYear}/${String(pMonth).padStart(2, '0')}/01`;
+            };
+
+            // 核心運算：計算日曆月統計 (加碼回饋)
+            const calcMonthlyStats = (cardType, limit, rate) => {
+                const map = {};
+                records.value.filter(r => r.card === cardType).forEach(r => {
+                    const d = new Date(r.date);
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const monthKey = `${yyyy}-${mm}`;
+
+                    if (!map[monthKey]) {
+                        map[monthKey] = {
+                            month: `${yyyy}/${mm}`,
+                            total: 0,
+                            payoutDate: getPayoutDate(yyyy, d.getMonth() + 1)
+                        };
+                    }
+                    map[monthKey].total += r.amount;
+                });
+
+                return Object.values(map).sort((a, b) => b.month.localeCompare(a.month)).map(stat => {
+                    // 計算邏輯
+                    const points = Math.min(Math.round(stat.total * rate), MAX_BONUS_POINTS);
+                    const remaining = Math.max(limit - stat.total, 0);
+                    const isExceeded = stat.total > limit;
+                    const isCapped = points >= MAX_BONUS_POINTS;
+
+                    return {
+                        ...stat,
+                        points,
+                        remaining,
+                        isExceeded,
+                        isCapped
+                    };
+                });
+            };
+
+            // 核心運算：計算結帳週期統計 (基本回饋)
+            const calcBillingStats = (cardType, rate) => {
+                const map = {};
+                records.value.filter(r => r.card === cardType).forEach(r => {
+                    const cycleInfo = getBillingCycleInfo(r.date);
+                    
+                    if (!map[cycleInfo.cycleId]) {
+                        map[cycleInfo.cycleId] = {
+                            cycleId: cycleInfo.cycleId,
+                            cycleName: cycleInfo.cycleName,
+                            billingDate: cycleInfo.billingDate,
+                            total: 0
+                        };
+                    }
+                    map[cycleInfo.cycleId].total += r.amount;
+                });
+
+                return Object.values(map).sort((a, b) => b.cycleId.localeCompare(a.cycleId)).map(stat => {
+                    return {
+                        ...stat,
+                        points: Math.round(stat.total * rate)
+                    };
+                });
+            };
+
+            // Computed Properties
+            const ecoMonthlyStats = computed(() => calcMonthlyStats('eco', ECO_LIMIT, ECO_BONUS_RATE));
+            const ecoBillingStats = computed(() => calcBillingStats('eco', ECO_BASE_RATE));
+            const aovMonthlyStats = computed(() => calcMonthlyStats('aov', AOV_LIMIT, AOV_BONUS_RATE));
+            const aovBillingStats = computed(() => calcBillingStats('aov', AOV_BASE_RATE));
+
+            const sortedRecords = computed(() => {
+                return [...records.value].sort((a, b) => new Date(b.date) - new Date(a.date));
+            });
+
+            // Methods
+            const addRecord = () => {
+                if (!form.value.date || !form.value.amount || form.value.amount <= 0) return;
+                
+                // 檢查日期是否超過 2026/06/30
+                if (new Date(form.value.date) > new Date('2026-06-30')) {
+                    alert('回饋活動有效至 2026/06/30，請選擇此日期之前的日期！');
+                    return;
+                }
+
+                records.value.push({
+                    id: generateId(),
+                    card: form.value.card,
+                    date: form.value.date,
+                    amount: Number(form.value.amount),
+                    desc: form.value.desc
+                });
+
+                // 重設表單金額和備註，保留日期和卡片方便連續輸入
+                form.value.amount = '';
+                form.value.desc = '';
+            };
+
+            const deleteRecord = (id) => {
+                if (confirm('確定要刪除這筆紀錄嗎？')) {
+                    records.value = records.value.filter(r => r.id !== id);
+                }
+            };
+
+            const exportToExcel = () => {
+                if (records.value.length === 0) {
+                    alert('目前沒有資料可以匯出。');
+                    return;
+                }
+
+                // CSV 表頭
+                let csvContent = "卡片名稱,消費日期,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期\n";
+                
+                sortedRecords.value.forEach(r => {
+                    const cardName = r.card === 'eco' ? '星展eco卡' : '傳說對決卡';
+                    const d = new Date(r.date);
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const calendarMonth = `${yyyy}/${mm}`;
+                    const payoutDate = getPayoutDate(yyyy, d.getMonth() + 1);
+                    const billingInfo = getBillingCycleInfo(r.date);
+                    const desc = r.desc ? r.desc.replace(/,/g, '，') : ''; // 防止 CSV 欄位跑掉
+
+                    csvContent += `${cardName},${r.date},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName}\n`;
+                });
+
+                // 加入 BOM 以支援 Excel 中文顯示
+                const BOM = "\uFEFF";
+                const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                
+                link.setAttribute("href", url);
+                link.setAttribute("download", `星展信用卡回饋明細_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            return {
+                records, form, activeTab,
+                ecoMonthlyStats, ecoBillingStats,
+                aovMonthlyStats, aovBillingStats,
+                sortedRecords,
+                addRecord, deleteRecord, exportToExcel, formatMoney
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
