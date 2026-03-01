@@ -333,19 +333,24 @@
                             </button>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
+                            <table class="w-full text-left border-collapse whitespace-nowrap">
                                 <thead>
                                     <tr class="bg-gray-100 text-gray-700 text-sm">
                                         <th class="p-3 rounded-tl-lg font-medium">卡別</th>
                                         <th class="p-3 font-medium">日期</th>
                                         <th class="p-3 font-medium">備註</th>
                                         <th class="p-3 font-medium text-right">金額</th>
+                                        <!-- 四個回饋明細欄位 -->
+                                        <th class="p-2 font-medium text-right text-xs text-green-700">eco 1%</th>
+                                        <th class="p-2 font-medium text-right text-xs text-green-700 border-r border-gray-200">eco 9%</th>
+                                        <th class="p-2 font-medium text-right text-xs text-purple-700">傳說 0.2%</th>
+                                        <th class="p-2 font-medium text-right text-xs text-purple-700 border-r border-gray-200">傳說 9.8%</th>
                                         <th class="p-3 rounded-tr-lg font-medium text-center">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                                     <tr v-if="sortedRecords.length === 0">
-                                        <td colspan="5" class="p-6 text-center text-gray-400">
+                                        <td colspan="9" class="p-6 text-center text-gray-400">
                                             <span v-if="isValidConfig">尚無任何消費紀錄 (或正在載入中...)</span>
                                             <span v-else class="text-yellow-600"><i class="ph ph-warning mr-1"></i>無法讀取資料：未設定 Firebase</span>
                                         </td>
@@ -360,6 +365,12 @@
                                             <td class="p-3 text-sm">{{ record.date }}</td>
                                             <td class="p-3 text-sm text-gray-600">{{ record.desc || '-' }}</td>
                                             <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(record.amount) }}</td>
+                                            <!-- 四個回饋點數計算結果 -->
+                                            <td class="p-2 text-right text-xs text-green-600">{{ record.ecoBase || '-' }}</td>
+                                            <td class="p-2 text-right text-xs text-green-600 border-r border-gray-200">{{ record.ecoBonus || '-' }}</td>
+                                            <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBase || '-' }}</td>
+                                            <td class="p-2 text-right text-xs text-purple-600 border-r border-gray-200">{{ record.aovBonus || '-' }}</td>
+                                            
                                             <td class="p-3 text-center">
                                                 <button @click="deleteRecord(record.id)" class="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-50 transition-colors" title="刪除">
                                                     <i class="ph ph-trash text-lg"></i>
@@ -610,14 +621,25 @@
                 });
             };
 
-            // Computed Properties
+            // Computed Properties (加入單筆回饋換算)
             const ecoMonthlyStats = computed(() => calcMonthlyStats('eco', ECO_LIMIT, ECO_BONUS_RATE));
             const ecoBillingStats = computed(() => calcBillingStats('eco', ECO_BASE_RATE));
             const aovMonthlyStats = computed(() => calcMonthlyStats('aov', AOV_LIMIT, AOV_BONUS_RATE));
             const aovBillingStats = computed(() => calcBillingStats('aov', AOV_BASE_RATE));
 
             const sortedRecords = computed(() => {
-                return [...records.value].sort((a, b) => new Date(b.date) - new Date(a.date));
+                return [...records.value].map(r => {
+                    const isEco = r.card === 'eco';
+                    const isAov = r.card === 'aov';
+                    return {
+                        ...r,
+                        // 預先計算出該筆消費在四個項目中可獲得的點數
+                        ecoBase: isEco ? Math.round(r.amount * ECO_BASE_RATE) : 0,
+                        ecoBonus: isEco ? Math.round(r.amount * ECO_BONUS_RATE) : 0,
+                        aovBase: isAov ? Math.round(r.amount * AOV_BASE_RATE) : 0,
+                        aovBonus: isAov ? Math.round(r.amount * AOV_BONUS_RATE) : 0
+                    };
+                }).sort((a, b) => new Date(b.date) - new Date(a.date));
             });
 
             // Methods: 新增紀錄到 Firebase
@@ -666,8 +688,14 @@
                     return;
                 }
 
-                let csvContent = "卡片名稱,消費日期,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期\n";
+                // 新增四個回饋欄位與統計欄位
+                let csvContent = "卡片名稱,消費日期,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期,eco基本回饋(1%),eco加碼回饋(9%),傳說基本回饋(0.2%),傳說加碼回饋(9.8%),本筆基本回饋統計,本筆加碼回饋統計\n";
                 
+                // 用來計算報表最底下的總計數值
+                let totalAmount = 0;
+                let totalEcoBase = 0, totalEcoBonus = 0, totalAovBase = 0, totalAovBonus = 0;
+                let totalRowBase = 0, totalRowBonus = 0;
+
                 sortedRecords.value.forEach(r => {
                     const cardName = r.card === 'eco' ? '星展eco卡' : '傳說對決卡';
                     const d = new Date(r.date);
@@ -678,8 +706,24 @@
                     const billingInfo = getBillingCycleInfo(r.date);
                     const desc = r.desc ? r.desc.replace(/,/g, '，') : ''; 
 
-                    csvContent += `${cardName},${r.date},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName}\n`;
+                    // 算出本筆紀錄各自加總
+                    const rowBase = r.ecoBase + r.aovBase;
+                    const rowBonus = r.ecoBonus + r.aovBonus;
+
+                    // 累計各項總計
+                    totalAmount += r.amount;
+                    totalEcoBase += r.ecoBase;
+                    totalEcoBonus += r.ecoBonus;
+                    totalAovBase += r.aovBase;
+                    totalAovBonus += r.aovBonus;
+                    totalRowBase += rowBase;
+                    totalRowBonus += rowBonus;
+
+                    csvContent += `${cardName},${r.date},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName},${r.ecoBase},${r.ecoBonus},${r.aovBase},${r.aovBonus},${rowBase},${rowBonus}\n`;
                 });
+
+                // 加入總計行
+                csvContent += `總計,-,${totalAmount},-,-,-,-,${totalEcoBase},${totalEcoBonus},${totalAovBase},${totalAovBonus},${totalRowBase},${totalRowBonus}\n`;
 
                 const BOM = "\uFEFF";
                 const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
