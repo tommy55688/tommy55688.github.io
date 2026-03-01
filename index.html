@@ -32,9 +32,24 @@
 </head>
 <body class="text-gray-800 antialiased p-4 md:p-8">
 
-<div id="app" class="max-w-6xl mx-auto">
+<div id="app" class="max-w-6xl mx-auto relative">
+    
+    <!-- 自訂提示視窗 (Modal) -->
+    <transition name="fade">
+        <div v-if="modal.show" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+                <h3 class="text-xl font-bold mb-3 text-gray-900">{{ modal.title }}</h3>
+                <p class="text-gray-600 mb-6 leading-relaxed">{{ modal.message }}</p>
+                <div class="flex justify-end gap-3">
+                    <button v-if="modal.type === 'confirm'" @click="modal.onCancel" class="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-xl transition-colors">取消</button>
+                    <button @click="modal.onConfirm" class="px-5 py-2.5 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors shadow-sm">確定</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
     <!-- 標題與簡介 -->
-    <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 border-t-4 border-red-600">
+    <div class="bg-white rounded-2xl shadow-lg p-6 mb-6 border-t-4 border-red-600">
         <div class="flex items-center justify-between mb-4">
             <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
                 <i class="ph ph-credit-card mr-3 text-red-600"></i>
@@ -69,6 +84,17 @@
                 <span>⏳ 回饋活動有效至：<span class="font-bold text-red-600">2026/06/30</span></span>
             </div>
         </div>
+    </div>
+
+    <!-- Firebase 未設定提示 -->
+    <div v-if="!isValidConfig" class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-800 p-4 mb-8 rounded-r-2xl shadow-sm">
+        <p class="font-bold flex items-center text-lg mb-1">
+            <i class="ph ph-warning-circle mr-2 text-2xl text-yellow-600"></i>
+            系統提示：目前為本地預覽模式
+        </p>
+        <p class="text-sm">
+            尚未偵測到有效的 Firebase 設定，為避免系統崩潰已暫停連線。請在程式碼的 <code>firebaseConfig</code> 區塊中貼上您專案的金鑰，即可啟用雲端即時儲存功能。
+        </p>
     </div>
 
     <div class="flex flex-col lg:flex-row gap-8">
@@ -319,7 +345,10 @@
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                                     <tr v-if="sortedRecords.length === 0">
-                                        <td colspan="5" class="p-6 text-center text-gray-400">尚無任何消費紀錄</td>
+                                        <td colspan="5" class="p-6 text-center text-gray-400">
+                                            <span v-if="isValidConfig">尚無任何消費紀錄 (或正在載入中...)</span>
+                                            <span v-else class="text-yellow-600"><i class="ph ph-warning mr-1"></i>無法讀取資料：未設定 Firebase</span>
+                                        </td>
                                     </tr>
                                     <transition-group name="fade">
                                         <tr v-for="record in sortedRecords" :key="record.id" class="hover:bg-gray-50">
@@ -349,8 +378,51 @@
     </div>
 </div>
 
-<script>
-    const { createApp, ref, computed, onMounted, watch } = Vue;
+<!-- 將原本的腳本替換為 type="module" 並引入 Firebase -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-analytics.js";
+    import { getDatabase, ref as dbRef, onValue, set, remove, push } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+    const firebaseConfig = {
+        apiKey: "AIzaSyDb5IN5p5Ey_mr33eMdFBqRjLQSMDROWdI",
+        authDomain: "dbslinepay.firebaseapp.com",
+        databaseURL: "https://dbslinepay-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "dbslinepay",
+        storageBucket: "dbslinepay.firebasestorage.app",
+        messagingSenderId: "686711292592",
+        appId: "1:686711292592:web:9de08e374641473fd2b175",
+        measurementId: "G-FPZKGRFJ13"
+    };
+
+    // 自動補齊 databaseURL (若 Firebase 控制台複製下來的設定中缺少這項)
+    if (firebaseConfig.projectId && !firebaseConfig.databaseURL) {
+        firebaseConfig.databaseURL = `https://${firebaseConfig.projectId}-default-rtdb.firebaseio.com`;
+    }
+
+    // 檢查是否已填寫設定 (至少需包含 projectId)
+    const hasValidConfig = !!firebaseConfig.projectId;
+
+    let database = null;
+    let auth = null;
+    let analytics = null;
+
+    if (hasValidConfig) {
+        try {
+            // Initialize Firebase
+            const firebaseApp = initializeApp(firebaseConfig);
+            analytics = getAnalytics(firebaseApp);
+            database = getDatabase(firebaseApp);
+            auth = getAuth(firebaseApp);
+        } catch (e) {
+            console.error("Firebase 初始化失敗:", e);
+        }
+    }
+
+    // 取得全域 Vue 物件的方法
+    const { createApp, ref, computed, onMounted } = Vue;
 
     // 常數設定
     const ECO_LIMIT = 11111;
@@ -368,6 +440,7 @@
             // 狀態
             const records = ref([]);
             const activeTab = ref('eco');
+            const isValidConfig = ref(hasValidConfig);
             const form = ref({
                 card: 'eco',
                 date: new Date().toISOString().split('T')[0], // 預設今天
@@ -375,29 +448,75 @@
                 desc: ''
             });
 
-            // 初始化：從 localStorage 讀取資料
-            onMounted(() => {
-                const saved = localStorage.getItem('dbs_rewards_data');
-                if (saved) {
-                    try {
-                        records.value = JSON.parse(saved);
-                    } catch (e) {
-                        console.error('Failed to parse saved data');
-                    }
-                }
+            // 自訂提示視窗狀態
+            const modal = ref({
+                show: false,
+                type: 'alert',
+                title: '',
+                message: '',
+                onConfirm: () => {},
+                onCancel: () => {}
             });
 
-            // 監聽資料變化並儲存
-            watch(records, (newVal) => {
-                localStorage.setItem('dbs_rewards_data', JSON.stringify(newVal));
-            }, { deep: true });
+            const showAlert = (title, message) => {
+                modal.value = {
+                    show: true,
+                    type: 'alert',
+                    title,
+                    message,
+                    onConfirm: () => { modal.value.show = false; }
+                };
+            };
+
+            const showConfirm = (title, message, onConfirmCallback) => {
+                modal.value = {
+                    show: true,
+                    type: 'confirm',
+                    title,
+                    message,
+                    onConfirm: () => {
+                        modal.value.show = false;
+                        if (onConfirmCallback) onConfirmCallback();
+                    },
+                    onCancel: () => { modal.value.show = false; }
+                };
+            };
+
+            // 初始化：自動匿名登入並監聽 Realtime Database
+            onMounted(() => {
+                if (!hasValidConfig) {
+                    console.warn("未偵測到 Firebase Config，為避免系統崩潰，目前已暫停連線服務。");
+                    return;
+                }
+
+                signInAnonymously(auth)
+                    .then(() => {
+                        // 登入成功後開始監聽資料
+                        const recordsDbRef = dbRef(database, 'records');
+                        
+                        onValue(recordsDbRef, (snapshot) => {
+                            const data = snapshot.val();
+                            if (data) {
+                                // 將 Firebase 的 Object 轉換為 Array
+                                records.value = Object.keys(data).map(key => ({
+                                    id: key, // 使用 Firebase 的 unique key 作為 ID
+                                    ...data[key]
+                                }));
+                            } else {
+                                records.value = [];
+                            }
+                        });
+                    })
+                    .catch((error) => {
+                        console.error("Firebase 匿名登入失敗:", error);
+                        showAlert("連線失敗", "登入資料庫失敗，請確認您的 Firebase 設定與權限是否正確開啟。");
+                    });
+            });
 
             // 工具函數
             const formatMoney = (val) => {
                 return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(val);
             };
-
-            const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
             // 推算結帳週期資訊
             const getBillingCycleInfo = (dateStr) => {
@@ -407,7 +526,6 @@
                 let date = d.getDate();
 
                 // 結帳日為 11 號，週期為 12 號到次月 11 號
-                // 如果日期大於等於 12，則屬於下一個月的結帳週期
                 if (date >= 12) {
                     month += 1;
                     if (month > 12) {
@@ -416,7 +534,6 @@
                     }
                 }
 
-                // 計算週期起迄
                 let startMonth = month - 1;
                 let startYear = year;
                 if (startMonth === 0) {
@@ -462,19 +579,12 @@
                 });
 
                 return Object.values(map).sort((a, b) => b.month.localeCompare(a.month)).map(stat => {
-                    // 計算邏輯
                     const points = Math.min(Math.round(stat.total * rate), MAX_BONUS_POINTS);
                     const remaining = Math.max(limit - stat.total, 0);
                     const isExceeded = stat.total > limit;
                     const isCapped = points >= MAX_BONUS_POINTS;
 
-                    return {
-                        ...stat,
-                        points,
-                        remaining,
-                        isExceeded,
-                        isCapped
-                    };
+                    return { ...stat, points, remaining, isExceeded, isCapped };
                 });
             };
 
@@ -496,10 +606,7 @@
                 });
 
                 return Object.values(map).sort((a, b) => b.cycleId.localeCompare(a.cycleId)).map(stat => {
-                    return {
-                        ...stat,
-                        points: Math.round(stat.total * rate)
-                    };
+                    return { ...stat, points: Math.round(stat.total * rate) };
                 });
             };
 
@@ -513,42 +620,52 @@
                 return [...records.value].sort((a, b) => new Date(b.date) - new Date(a.date));
             });
 
-            // Methods
+            // Methods: 新增紀錄到 Firebase
             const addRecord = () => {
                 if (!form.value.date || !form.value.amount || form.value.amount <= 0) return;
                 
-                // 檢查日期是否超過 2026/06/30
-                if (new Date(form.value.date) > new Date('2026-06-30')) {
-                    alert('回饋活動有效至 2026/06/30，請選擇此日期之前的日期！');
+                if (!hasValidConfig) {
+                    showAlert("功能停用", "請先在程式碼中的 firebaseConfig 區塊填寫您的專案金鑰，才能使用新增與雲端儲存功能喔！");
                     return;
                 }
 
-                records.value.push({
-                    id: generateId(),
+                if (new Date(form.value.date) > new Date('2026-06-30')) {
+                    showAlert("日期無效", "回饋活動有效至 2026/06/30，請選擇此日期之前的日期！");
+                    return;
+                }
+
+                // 產生新的 push key ref
+                const newRecordRef = push(dbRef(database, 'records'));
+                
+                // 寫入資料到 Firebase
+                set(newRecordRef, {
                     card: form.value.card,
                     date: form.value.date,
                     amount: Number(form.value.amount),
                     desc: form.value.desc
                 });
 
-                // 重設表單金額和備註，保留日期和卡片方便連續輸入
                 form.value.amount = '';
                 form.value.desc = '';
             };
 
+            // Methods: 從 Firebase 刪除紀錄
             const deleteRecord = (id) => {
-                if (confirm('確定要刪除這筆紀錄嗎？')) {
-                    records.value = records.value.filter(r => r.id !== id);
-                }
+                if (!hasValidConfig) return;
+
+                showConfirm("確定刪除？", "您確定要刪除這筆紀錄嗎？此動作將同步至雲端且無法復原。", () => {
+                    // 指向特定 ID 並移除
+                    const targetRef = dbRef(database, `records/${id}`);
+                    remove(targetRef);
+                });
             };
 
             const exportToExcel = () => {
                 if (records.value.length === 0) {
-                    alert('目前沒有資料可以匯出。');
+                    showAlert("無法匯出", "目前沒有任何資料可以匯出。");
                     return;
                 }
 
-                // CSV 表頭
                 let csvContent = "卡片名稱,消費日期,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期\n";
                 
                 sortedRecords.value.forEach(r => {
@@ -559,12 +676,11 @@
                     const calendarMonth = `${yyyy}/${mm}`;
                     const payoutDate = getPayoutDate(yyyy, d.getMonth() + 1);
                     const billingInfo = getBillingCycleInfo(r.date);
-                    const desc = r.desc ? r.desc.replace(/,/g, '，') : ''; // 防止 CSV 欄位跑掉
+                    const desc = r.desc ? r.desc.replace(/,/g, '，') : ''; 
 
                     csvContent += `${cardName},${r.date},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName}\n`;
                 });
 
-                // 加入 BOM 以支援 Excel 中文顯示
                 const BOM = "\uFEFF";
                 const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement("a");
@@ -579,7 +695,7 @@
             };
 
             return {
-                records, form, activeTab,
+                records, form, activeTab, isValidConfig, modal,
                 ecoMonthlyStats, ecoBillingStats,
                 aovMonthlyStats, aovBillingStats,
                 sortedRecords,
