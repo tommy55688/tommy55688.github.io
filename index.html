@@ -127,15 +127,21 @@
 
                     <!-- 消費日期 -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">消費日期</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">消費日期 <span class="text-red-500">*</span></label>
                         <input type="date" v-model="form.date" required max="2026-06-30"
                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
-                        <p class="text-xs text-gray-500 mt-1">最晚至 2026/06/30</p>
+                    </div>
+
+                    <!-- 入帳起息日 (新增) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">入帳起息日 (選填)</label>
+                        <input type="date" v-model="form.entryDate"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
                     </div>
 
                     <!-- 消費金額 -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">消費金額 (NT$)</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">消費金額 (NT$) <span class="text-red-500">*</span></label>
                         <div class="relative">
                             <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">$</span>
                             <input type="number" v-model="form.amount" required min="1" placeholder="輸入金額"
@@ -332,16 +338,17 @@
                                 <i class="ph ph-file-xls mr-1 text-lg"></i> 匯出
                             </button>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse whitespace-nowrap">
+                        <div class="overflow-x-auto pb-4"> <!-- pb-4 防止下拉選單被截斷 -->
+                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-max">
                                 <thead>
                                     <tr class="bg-gray-100 text-gray-700 text-sm">
                                         <th class="p-3 rounded-tl-lg font-medium">卡別</th>
-                                        <th class="p-3 font-medium">日期</th>
-                                        <th class="p-3 font-medium">備註</th>
+                                        <th class="p-3 font-medium">消費日期</th>
+                                        <th class="p-3 font-medium">入帳起息日</th>
                                         <th class="p-3 font-medium text-right">金額</th>
+                                        <th class="p-3 font-medium">備註</th>
                                         <!-- 四個回饋明細欄位 -->
-                                        <th class="p-2 font-medium text-right text-xs text-green-700">eco 1%</th>
+                                        <th class="p-2 font-medium text-right text-xs text-green-700 border-l border-gray-200">eco 1%</th>
                                         <th class="p-2 font-medium text-right text-xs text-green-700 border-r border-gray-200">eco 9%</th>
                                         <th class="p-2 font-medium text-right text-xs text-purple-700">傳說 0.2%</th>
                                         <th class="p-2 font-medium text-right text-xs text-purple-700 border-r border-gray-200">傳說 9.8%</th>
@@ -350,32 +357,76 @@
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                                     <tr v-if="sortedRecords.length === 0">
-                                        <td colspan="9" class="p-6 text-center text-gray-400">
+                                        <td colspan="10" class="p-6 text-center text-gray-400">
                                             <span v-if="isValidConfig">尚無任何消費紀錄 (或正在載入中...)</span>
                                             <span v-else class="text-yellow-600"><i class="ph ph-warning mr-1"></i>無法讀取資料：未設定 Firebase</span>
                                         </td>
                                     </tr>
                                     <transition-group name="fade">
                                         <tr v-for="record in sortedRecords" :key="record.id" class="hover:bg-gray-50">
-                                            <td class="p-3">
-                                                <span :class="['px-2 py-1 rounded text-xs font-bold', record.card === 'eco' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700']">
-                                                    {{ record.card === 'eco' ? 'eco卡' : '傳說卡' }}
-                                                </span>
-                                            </td>
-                                            <td class="p-3 text-sm">{{ record.date }}</td>
-                                            <td class="p-3 text-sm text-gray-600">{{ record.desc || '-' }}</td>
-                                            <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(record.amount) }}</td>
-                                            <!-- 四個回饋點數計算結果 -->
-                                            <td class="p-2 text-right text-xs text-green-600">{{ record.ecoBase || '-' }}</td>
-                                            <td class="p-2 text-right text-xs text-green-600 border-r border-gray-200">{{ record.ecoBonus || '-' }}</td>
-                                            <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBase || '-' }}</td>
-                                            <td class="p-2 text-right text-xs text-purple-600 border-r border-gray-200">{{ record.aovBonus || '-' }}</td>
                                             
-                                            <td class="p-3 text-center">
-                                                <button @click="deleteRecord(record.id)" class="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-50 transition-colors" title="刪除">
-                                                    <i class="ph ph-trash text-lg"></i>
-                                                </button>
-                                            </td>
+                                            <!-- ===== 編輯模式 ===== -->
+                                            <template v-if="editingId === record.id">
+                                                <td class="p-2">
+                                                    <select v-model="editForm.card" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
+                                                        <option value="eco">eco卡</option>
+                                                        <option value="aov">傳說卡</option>
+                                                    </select>
+                                                </td>
+                                                <td class="p-2">
+                                                    <input type="date" v-model="editForm.date" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
+                                                </td>
+                                                <td class="p-2">
+                                                    <input type="date" v-model="editForm.entryDate" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
+                                                </td>
+                                                <td class="p-2">
+                                                    <input type="number" v-model="editForm.amount" min="1" class="w-24 px-2 py-1.5 border border-red-300 rounded text-sm text-right focus:ring-red-500 focus:border-red-500">
+                                                </td>
+                                                <td class="p-2">
+                                                    <input type="text" v-model="editForm.desc" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
+                                                </td>
+                                                <!-- 回饋預覽(編輯時為空) -->
+                                                <td colspan="4" class="p-2 text-center text-xs text-gray-400 border-x border-gray-200 bg-gray-100 rounded">
+                                                    儲存後重新計算...
+                                                </td>
+                                                <td class="p-2 text-center whitespace-nowrap">
+                                                    <button @click="saveEdit" class="text-green-600 hover:text-green-800 p-1 rounded-md hover:bg-green-100 transition-colors" title="儲存修改">
+                                                        <i class="ph ph-check-circle text-xl"></i>
+                                                    </button>
+                                                    <button @click="cancelEdit" class="text-gray-500 hover:text-gray-700 p-1 rounded-md hover:bg-gray-200 transition-colors ml-1" title="取消">
+                                                        <i class="ph ph-x-circle text-xl"></i>
+                                                    </button>
+                                                </td>
+                                            </template>
+
+                                            <!-- ===== 顯示模式 ===== -->
+                                            <template v-else>
+                                                <td class="p-3">
+                                                    <span :class="['px-2 py-1 rounded text-xs font-bold', record.card === 'eco' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700']">
+                                                        {{ record.card === 'eco' ? 'eco卡' : '傳說卡' }}
+                                                    </span>
+                                                </td>
+                                                <td class="p-3 text-sm">{{ record.date }}</td>
+                                                <td class="p-3 text-sm text-gray-500">{{ record.entryDate || '-' }}</td>
+                                                <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(record.amount) }}</td>
+                                                <td class="p-3 text-sm text-gray-600 max-w-[150px] truncate" :title="record.desc">{{ record.desc || '-' }}</td>
+                                                
+                                                <!-- 四個回饋點數計算結果 -->
+                                                <td class="p-2 text-right text-xs text-green-600 border-l border-gray-200">{{ record.ecoBase || '-' }}</td>
+                                                <td class="p-2 text-right text-xs text-green-600 border-r border-gray-200">{{ record.ecoBonus || '-' }}</td>
+                                                <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBase || '-' }}</td>
+                                                <td class="p-2 text-right text-xs text-purple-600 border-r border-gray-200">{{ record.aovBonus || '-' }}</td>
+                                                
+                                                <td class="p-3 text-center whitespace-nowrap">
+                                                    <button @click="startEdit(record)" class="text-blue-500 hover:text-blue-700 p-1 rounded-md hover:bg-blue-50 transition-colors" title="編輯">
+                                                        <i class="ph ph-pencil text-lg"></i>
+                                                    </button>
+                                                    <button @click="deleteRecord(record.id)" class="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-50 transition-colors ml-1" title="刪除">
+                                                        <i class="ph ph-trash text-lg"></i>
+                                                    </button>
+                                                </td>
+                                            </template>
+
                                         </tr>
                                     </transition-group>
                                 </tbody>
@@ -393,7 +444,7 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-analytics.js";
-    import { getDatabase, ref as dbRef, onValue, set, remove, push } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    import { getDatabase, ref as dbRef, onValue, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
     // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -455,9 +506,14 @@
             const form = ref({
                 card: 'eco',
                 date: new Date().toISOString().split('T')[0], // 預設今天
+                entryDate: '', // 新增：入帳起息日
                 amount: '',
                 desc: ''
             });
+
+            // 編輯功能狀態
+            const editingId = ref(null);
+            const editForm = ref({});
 
             // 自訂提示視窗狀態
             const modal = ref({
@@ -647,7 +703,7 @@
                 if (!form.value.date || !form.value.amount || form.value.amount <= 0) return;
                 
                 if (!hasValidConfig) {
-                    showAlert("功能停用", "請先在程式碼中的 firebaseConfig 區塊填寫您的專案金鑰，才能使用新增與雲端儲存功能喔！");
+                    showAlert("功能停用", "請先確認 Firebase 連線。");
                     return;
                 }
 
@@ -663,12 +719,53 @@
                 set(newRecordRef, {
                     card: form.value.card,
                     date: form.value.date,
+                    entryDate: form.value.entryDate || '', // 寫入入帳起息日
                     amount: Number(form.value.amount),
                     desc: form.value.desc
                 });
 
+                // 重置部分表單 (保留日期方便連續輸入)
                 form.value.amount = '';
                 form.value.desc = '';
+                form.value.entryDate = '';
+            };
+
+            // Methods: 編輯紀錄
+            const startEdit = (record) => {
+                editingId.value = record.id;
+                // 深拷貝一份資料給編輯表單使用
+                editForm.value = { ...record };
+            };
+
+            const cancelEdit = () => {
+                editingId.value = null;
+                editForm.value = {};
+            };
+
+            const saveEdit = () => {
+                if (!editForm.value.date || !editForm.value.amount || editForm.value.amount <= 0) {
+                    showAlert("資料不全", "請確認消費日期與金額填寫正確且大於 0。");
+                    return;
+                }
+                
+                if (new Date(editForm.value.date) > new Date('2026-06-30')) {
+                    showAlert("日期無效", "回饋活動有效至 2026/06/30，請選擇此日期之前的日期！");
+                    return;
+                }
+
+                const targetRef = dbRef(database, `records/${editingId.value}`);
+                // 僅更新特定欄位到資料庫
+                update(targetRef, {
+                    card: editForm.value.card,
+                    date: editForm.value.date,
+                    entryDate: editForm.value.entryDate || '',
+                    amount: Number(editForm.value.amount),
+                    desc: editForm.value.desc || ''
+                }).then(() => {
+                    cancelEdit(); // 成功後關閉編輯狀態
+                }).catch((error) => {
+                    showAlert("更新失敗", error.message);
+                });
             };
 
             // Methods: 從 Firebase 刪除紀錄
@@ -676,22 +773,21 @@
                 if (!hasValidConfig) return;
 
                 showConfirm("確定刪除？", "您確定要刪除這筆紀錄嗎？此動作將同步至雲端且無法復原。", () => {
-                    // 指向特定 ID 並移除
                     const targetRef = dbRef(database, `records/${id}`);
                     remove(targetRef);
                 });
             };
 
+            // Methods: 匯出 Excel
             const exportToExcel = () => {
                 if (records.value.length === 0) {
                     showAlert("無法匯出", "目前沒有任何資料可以匯出。");
                     return;
                 }
 
-                // 新增四個回饋欄位與統計欄位
-                let csvContent = "卡片名稱,消費日期,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期,eco基本回饋(1%),eco加碼回饋(9%),傳說基本回饋(0.2%),傳說加碼回饋(9.8%),本筆基本回饋統計,本筆加碼回饋統計\n";
+                // 表頭加入「入帳起息日」
+                let csvContent = "卡片名稱,消費日期,入帳起息日,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期,eco基本回饋(1%),eco加碼回饋(9%),傳說基本回饋(0.2%),傳說加碼回饋(9.8%),本筆基本回饋統計,本筆加碼回饋統計\n";
                 
-                // 用來計算報表最底下的總計數值
                 let totalAmount = 0;
                 let totalEcoBase = 0, totalEcoBonus = 0, totalAovBase = 0, totalAovBonus = 0;
                 let totalRowBase = 0, totalRowBonus = 0;
@@ -705,12 +801,11 @@
                     const payoutDate = getPayoutDate(yyyy, d.getMonth() + 1);
                     const billingInfo = getBillingCycleInfo(r.date);
                     const desc = r.desc ? r.desc.replace(/,/g, '，') : ''; 
+                    const entryDate = r.entryDate || '-';
 
-                    // 算出本筆紀錄各自加總
                     const rowBase = r.ecoBase + r.aovBase;
                     const rowBonus = r.ecoBonus + r.aovBonus;
 
-                    // 累計各項總計
                     totalAmount += r.amount;
                     totalEcoBase += r.ecoBase;
                     totalEcoBonus += r.ecoBonus;
@@ -719,11 +814,11 @@
                     totalRowBase += rowBase;
                     totalRowBonus += rowBonus;
 
-                    csvContent += `${cardName},${r.date},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName},${r.ecoBase},${r.ecoBonus},${r.aovBase},${r.aovBonus},${rowBase},${rowBonus}\n`;
+                    csvContent += `${cardName},${r.date},${entryDate},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName},${r.ecoBase},${r.ecoBonus},${r.aovBase},${r.aovBonus},${rowBase},${rowBonus}\n`;
                 });
 
                 // 加入總計行
-                csvContent += `總計,-,${totalAmount},-,-,-,-,${totalEcoBase},${totalEcoBonus},${totalAovBase},${totalAovBonus},${totalRowBase},${totalRowBonus}\n`;
+                csvContent += `總計,-,-,${totalAmount},-,-,-,-,${totalEcoBase},${totalEcoBonus},${totalAovBase},${totalAovBonus},${totalRowBase},${totalRowBonus}\n`;
 
                 const BOM = "\uFEFF";
                 const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -740,6 +835,7 @@
 
             return {
                 records, form, activeTab, isValidConfig, modal,
+                editingId, editForm, startEdit, cancelEdit, saveEdit,
                 ecoMonthlyStats, ecoBillingStats,
                 aovMonthlyStats, aovBillingStats,
                 sortedRecords,
