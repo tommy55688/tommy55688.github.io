@@ -74,8 +74,9 @@
                 <strong class="text-red-600 text-base mb-1 block">💎 星展 傳說對決聯名卡</strong>
                 <ul class="list-disc pl-5 space-y-1">
                     <li>基本回饋：0.2% 無上限 (依結帳週期計算)</li>
-                    <li>加碼回饋：9.8% 上限 1000 點 (依日曆月計算)</li>
-                    <li>每月加碼最高可刷額度：<span class="font-bold text-gray-800">11,363</span> 元</li>
+                    <li>加碼回饋 1：1% 無上限 (依日曆月計算)</li>
+                    <li>加碼回饋 2：8.8% 上限 1000 點 (依日曆月計算)</li>
+                    <li>每月加碼 2 最高可刷額度：<span class="font-bold text-gray-800">11,363</span> 元</li>
                     <li>加碼回饋入帳日：次次月 1 日</li>
                 </ul>
             </div>
@@ -261,7 +262,7 @@
                         <div class="mb-8">
                             <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
                                 <i class="ph ph-calendar-star mr-2 text-xl text-yellow-500"></i>
-                                日曆月加碼回饋 (9.8%)
+                                日曆月加碼回饋 (1% + 8.8%)
                             </h3>
                             <div class="overflow-x-auto">
                                 <table class="w-full text-left border-collapse">
@@ -269,15 +270,16 @@
                                         <tr class="bg-gray-100 text-gray-700 text-sm">
                                             <th class="p-3 rounded-tl-lg font-medium">消費月份</th>
                                             <th class="p-3 font-medium text-right">累積消費</th>
-                                            <th class="p-3 font-medium text-right">剩餘可刷額度</th>
+                                            <th class="p-3 font-medium text-right">剩餘可刷額度(8.8%)</th>
                                             <th class="p-3 font-medium text-center">達 1000 點上限</th>
-                                            <th class="p-3 font-medium text-right">預估加碼點數</th>
+                                            <th class="p-3 font-medium text-right">預估加碼(1%)</th>
+                                            <th class="p-3 font-medium text-right">預估加碼(8.8%)</th>
                                             <th class="p-3 rounded-tr-lg font-medium text-center">回饋入帳日</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-200">
                                         <tr v-if="aovMonthlyStats.length === 0">
-                                            <td colspan="6" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
+                                            <td colspan="7" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
                                         </tr>
                                         <tr v-for="stat in aovMonthlyStats" :key="stat.month" class="hover:bg-gray-50">
                                             <td class="p-3 font-medium">{{ stat.month }}</td>
@@ -291,7 +293,8 @@
                                                 <span v-if="stat.isCapped" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">是</span>
                                                 <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">否</span>
                                             </td>
-                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
+                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points1 }} 點</td>
+                                            <td class="p-3 text-right text-purple-600 font-bold">{{ stat.points2 }} 點</td>
                                             <td class="p-3 text-center text-gray-600 text-sm">{{ stat.payoutDate }}</td>
                                         </tr>
                                     </tbody>
@@ -351,13 +354,14 @@
                                         <th class="p-2 font-medium text-right text-xs text-green-700 border-l border-gray-200">eco 1%</th>
                                         <th class="p-2 font-medium text-right text-xs text-green-700 border-r border-gray-200">eco 9%</th>
                                         <th class="p-2 font-medium text-right text-xs text-purple-700">傳說 0.2%</th>
-                                        <th class="p-2 font-medium text-right text-xs text-purple-700 border-r border-gray-200">傳說 9.8%</th>
+                                        <th class="p-2 font-medium text-right text-xs text-purple-700">傳說 1%</th>
+                                        <th class="p-2 font-medium text-right text-xs text-purple-700 border-r border-gray-200">傳說 8.8%</th>
                                         <th class="p-3 rounded-tr-lg font-medium text-center">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                                     <tr v-if="sortedRecords.length === 0">
-                                        <td colspan="10" class="p-6 text-center text-gray-400">
+                                        <td colspan="11" class="p-6 text-center text-gray-400">
                                             <span v-if="isValidConfig">尚無任何消費紀錄 (或正在載入中...)</span>
                                             <span v-else class="text-yellow-600"><i class="ph ph-warning mr-1"></i>無法讀取資料：未設定 Firebase</span>
                                         </td>
@@ -386,7 +390,7 @@
                                                     <input type="text" v-model="editForm.desc" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
                                                 </td>
                                                 <!-- 回饋預覽(編輯時為空) -->
-                                                <td colspan="4" class="p-2 text-center text-xs text-gray-400 border-x border-gray-200 bg-gray-100 rounded">
+                                                <td colspan="5" class="p-2 text-center text-xs text-gray-400 border-x border-gray-200 bg-gray-100 rounded">
                                                     儲存後重新計算...
                                                 </td>
                                                 <td class="p-2 text-center whitespace-nowrap">
@@ -411,11 +415,12 @@
                                                 <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(record.amount) }}</td>
                                                 <td class="p-3 text-sm text-gray-600 max-w-[150px] truncate" :title="record.desc">{{ record.desc || '-' }}</td>
                                                 
-                                                <!-- 四個回饋點數計算結果 -->
+                                                <!-- 回饋點數計算結果 -->
                                                 <td class="p-2 text-right text-xs text-green-600 border-l border-gray-200">{{ record.ecoBase || '-' }}</td>
                                                 <td class="p-2 text-right text-xs text-green-600 border-r border-gray-200">{{ record.ecoBonus || '-' }}</td>
                                                 <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBase || '-' }}</td>
-                                                <td class="p-2 text-right text-xs text-purple-600 border-r border-gray-200">{{ record.aovBonus || '-' }}</td>
+                                                <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBonus1 || '-' }}</td>
+                                                <td class="p-2 text-right text-xs text-purple-600 border-r border-gray-200">{{ record.aovBonus2 || '-' }}</td>
                                                 
                                                 <td class="p-3 text-center whitespace-nowrap">
                                                     <button @click="startEdit(record)" class="text-blue-500 hover:text-blue-700 p-1 rounded-md hover:bg-blue-50 transition-colors" title="編輯">
@@ -492,7 +497,8 @@
     const ECO_BASE_RATE = 0.01;
     
     const AOV_LIMIT = 11363;
-    const AOV_BONUS_RATE = 0.098;
+    const AOV_BONUS_RATE_1 = 0.01;
+    const AOV_BONUS_RATE_2 = 0.088;
     const AOV_BASE_RATE = 0.002;
 
     const MAX_BONUS_POINTS = 1000;
@@ -680,7 +686,36 @@
             // Computed Properties (加入單筆回饋換算)
             const ecoMonthlyStats = computed(() => calcMonthlyStats('eco', ECO_LIMIT, ECO_BONUS_RATE));
             const ecoBillingStats = computed(() => calcBillingStats('eco', ECO_BASE_RATE));
-            const aovMonthlyStats = computed(() => calcMonthlyStats('aov', AOV_LIMIT, AOV_BONUS_RATE));
+            
+            const aovMonthlyStats = computed(() => {
+                const map = {};
+                records.value.filter(r => r.card === 'aov').forEach(r => {
+                    const d = new Date(r.date);
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const monthKey = `${yyyy}-${mm}`;
+
+                    if (!map[monthKey]) {
+                        map[monthKey] = {
+                            month: `${yyyy}/${mm}`,
+                            total: 0,
+                            payoutDate: getPayoutDate(yyyy, d.getMonth() + 1)
+                        };
+                    }
+                    map[monthKey].total += r.amount;
+                });
+
+                return Object.values(map).sort((a, b) => b.month.localeCompare(a.month)).map(stat => {
+                    const points1 = Math.round(stat.total * AOV_BONUS_RATE_1);
+                    const points2 = Math.min(Math.round(stat.total * AOV_BONUS_RATE_2), MAX_BONUS_POINTS);
+                    const remaining = Math.max(AOV_LIMIT - stat.total, 0);
+                    const isExceeded = stat.total > AOV_LIMIT;
+                    const isCapped = points2 >= MAX_BONUS_POINTS;
+
+                    return { ...stat, points1, points2, remaining, isExceeded, isCapped };
+                });
+            });
+
             const aovBillingStats = computed(() => calcBillingStats('aov', AOV_BASE_RATE));
 
             const sortedRecords = computed(() => {
@@ -689,11 +724,12 @@
                     const isAov = r.card === 'aov';
                     return {
                         ...r,
-                        // 預先計算出該筆消費在四個項目中可獲得的點數
+                        // 預先計算出該筆消費在各個項目中可獲得的點數
                         ecoBase: isEco ? Math.round(r.amount * ECO_BASE_RATE) : 0,
                         ecoBonus: isEco ? Math.round(r.amount * ECO_BONUS_RATE) : 0,
                         aovBase: isAov ? Math.round(r.amount * AOV_BASE_RATE) : 0,
-                        aovBonus: isAov ? Math.round(r.amount * AOV_BONUS_RATE) : 0
+                        aovBonus1: isAov ? Math.round(r.amount * AOV_BONUS_RATE_1) : 0,
+                        aovBonus2: isAov ? Math.round(r.amount * AOV_BONUS_RATE_2) : 0
                     };
                 }).sort((a, b) => new Date(b.date) - new Date(a.date));
             });
@@ -785,11 +821,11 @@
                     return;
                 }
 
-                // 表頭加入「入帳起息日」
-                let csvContent = "卡片名稱,消費日期,入帳起息日,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期,eco基本回饋(1%),eco加碼回饋(9%),傳說基本回饋(0.2%),傳說加碼回饋(9.8%),本筆基本回饋統計,本筆加碼回饋統計\n";
+                // 表頭加入「入帳起息日」與更新的回饋欄位
+                let csvContent = "卡片名稱,消費日期,入帳起息日,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期,eco基本回饋(1%),eco加碼回饋(9%),傳說基本回饋(0.2%),傳說加碼回饋1(1%),傳說加碼回饋2(8.8%),本筆基本回饋統計,本筆加碼回饋統計\n";
                 
                 let totalAmount = 0;
-                let totalEcoBase = 0, totalEcoBonus = 0, totalAovBase = 0, totalAovBonus = 0;
+                let totalEcoBase = 0, totalEcoBonus = 0, totalAovBase = 0, totalAovBonus1 = 0, totalAovBonus2 = 0;
                 let totalRowBase = 0, totalRowBonus = 0;
 
                 sortedRecords.value.forEach(r => {
@@ -804,21 +840,22 @@
                     const entryDate = r.entryDate || '-';
 
                     const rowBase = r.ecoBase + r.aovBase;
-                    const rowBonus = r.ecoBonus + r.aovBonus;
+                    const rowBonus = r.ecoBonus + r.aovBonus1 + r.aovBonus2;
 
                     totalAmount += r.amount;
                     totalEcoBase += r.ecoBase;
                     totalEcoBonus += r.ecoBonus;
                     totalAovBase += r.aovBase;
-                    totalAovBonus += r.aovBonus;
+                    totalAovBonus1 += r.aovBonus1;
+                    totalAovBonus2 += r.aovBonus2;
                     totalRowBase += rowBase;
                     totalRowBonus += rowBonus;
 
-                    csvContent += `${cardName},${r.date},${entryDate},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName},${r.ecoBase},${r.ecoBonus},${r.aovBase},${r.aovBonus},${rowBase},${rowBonus}\n`;
+                    csvContent += `${cardName},${r.date},${entryDate},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName},${r.ecoBase},${r.ecoBonus},${r.aovBase},${r.aovBonus1},${r.aovBonus2},${rowBase},${rowBonus}\n`;
                 });
 
                 // 加入總計行
-                csvContent += `總計,-,-,${totalAmount},-,-,-,-,${totalEcoBase},${totalEcoBonus},${totalAovBase},${totalAovBonus},${totalRowBase},${totalRowBonus}\n`;
+                csvContent += `總計,-,-,${totalAmount},-,-,-,-,${totalEcoBase},${totalEcoBonus},${totalAovBase},${totalAovBonus1},${totalAovBonus2},${totalRowBase},${totalRowBonus}\n`;
 
                 const BOM = "\uFEFF";
                 const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
