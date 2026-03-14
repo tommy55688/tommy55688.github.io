@@ -719,19 +719,54 @@
             const aovBillingStats = computed(() => calcBillingStats('aov', AOV_BASE_RATE));
 
             const sortedRecords = computed(() => {
-                return [...records.value].map(r => {
+                // 先將所有紀錄依照日期「由舊到新」排序，以便準確計算每月的累積點數與上限
+                const chronologicalRecords = [...records.value].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                // 準備物件來記錄每個月份「已經發放」的加碼點數
+                const monthlyBonusAcc = { eco: {}, aov: {} };
+
+                const processedRecords = chronologicalRecords.map(r => {
+                    const d = new Date(r.date);
+                    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    
                     const isEco = r.card === 'eco';
                     const isAov = r.card === 'aov';
+
+                    // 基本回饋與無上限加碼，直接計算
+                    const ecoBase = isEco ? Math.round(r.amount * ECO_BASE_RATE) : 0;
+                    const aovBase = isAov ? Math.round(r.amount * AOV_BASE_RATE) : 0;
+                    const aovBonus1 = isAov ? Math.round(r.amount * AOV_BONUS_RATE_1) : 0;
+
+                    // 有上限的加碼回饋，需檢查該月剩餘額度
+                    let ecoBonus = 0;
+                    let aovBonus2 = 0;
+
+                    if (isEco) {
+                        if (!monthlyBonusAcc.eco[monthKey]) monthlyBonusAcc.eco[monthKey] = 0;
+                        const rawPoints = Math.round(r.amount * ECO_BONUS_RATE);
+                        const remainingCap = Math.max(0, MAX_BONUS_POINTS - monthlyBonusAcc.eco[monthKey]);
+                        ecoBonus = Math.min(rawPoints, remainingCap);
+                        monthlyBonusAcc.eco[monthKey] += ecoBonus; // 累加本筆發放點數
+                    } else if (isAov) {
+                        if (!monthlyBonusAcc.aov[monthKey]) monthlyBonusAcc.aov[monthKey] = 0;
+                        const rawPoints = Math.round(r.amount * AOV_BONUS_RATE_2);
+                        const remainingCap = Math.max(0, MAX_BONUS_POINTS - monthlyBonusAcc.aov[monthKey]);
+                        aovBonus2 = Math.min(rawPoints, remainingCap);
+                        monthlyBonusAcc.aov[monthKey] += aovBonus2; // 累加本筆發放點數
+                    }
+
                     return {
                         ...r,
-                        // 預先計算出該筆消費在各個項目中可獲得的點數
-                        ecoBase: isEco ? Math.round(r.amount * ECO_BASE_RATE) : 0,
-                        ecoBonus: isEco ? Math.round(r.amount * ECO_BONUS_RATE) : 0,
-                        aovBase: isAov ? Math.round(r.amount * AOV_BASE_RATE) : 0,
-                        aovBonus1: isAov ? Math.round(r.amount * AOV_BONUS_RATE_1) : 0,
-                        aovBonus2: isAov ? Math.round(r.amount * AOV_BONUS_RATE_2) : 0
+                        ecoBase,
+                        ecoBonus,
+                        aovBase,
+                        aovBonus1,
+                        aovBonus2
                     };
-                }).sort((a, b) => new Date(b.date) - new Date(a.date));
+                });
+
+                // 回傳前，再將順序改回「由新到舊」以符合明細表的顯示習慣
+                return processedRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
             });
 
             // Methods: 新增紀錄到 Firebase
