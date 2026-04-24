@@ -1,920 +1,746 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>星展信用卡回饋計算器 (eco / 傳說對決)</title>
-    <!-- 引入 Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Vue 3 -->
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <!-- 引入 Phosphor Icons (圖示) -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Plus, 
+  Trash2, 
+  Download, 
+  Upload,
+  CreditCard, 
+  Calendar, 
+  Monitor, 
+  Smartphone, 
+  AlertCircle,
+  CheckCircle2,
+  TrendingUp,
+  History,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Target,
+  Sparkles,
+  Loader2,
+  Pencil,
+  X
+} from 'lucide-react';
+
+const App = () => {
+  const [viewMode, setViewMode] = useState('pc'); 
+  const [activeTab, setActiveTab] = useState('eco_linepay'); 
+  
+  const [aiAnalysis, setAiAnalysis] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [showAiModal, setShowAiModal] = useState(false);
+
+  const fileInputRef = useRef(null);
+
+  const today = new Date();
+  const [filterYear, setFilterYear] = useState(today.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(today.getMonth());
+
+  // 載入資料並處理舊版 (v6) 資料的相容性
+  const [transactions, setTransactions] = useState(() => {
+    const saved = localStorage.getItem('dbs_transactions_v7');
+    if (saved) return JSON.parse(saved);
     
-    <style>
-        body {
-            font-family: 'Helvetica Neue', Arial, 'LiHei Pro', 'Microsoft JhengHei', sans-serif;
-            background-color: #f3f4f6;
-        }
-        /* 隱藏原生數字輸入框的上下箭頭 */
-        input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { 
-            -webkit-appearance: none; 
-            margin: 0; 
-        }
-        .fade-enter-active, .fade-leave-active {
-            transition: opacity 0.3s ease;
-        }
-        .fade-enter-from, .fade-leave-to {
-            opacity: 0;
-        }
-    </style>
-</head>
-<body class="text-gray-800 antialiased p-4 md:p-8">
+    const savedV6 = localStorage.getItem('dbs_transactions_v6');
+    if (savedV6) {
+      const parsed = JSON.parse(savedV6);
+      return parsed.map(t => {
+        if (t.card === 'eco') return { ...t, card: 'eco_linepay' };
+        return t;
+      });
+    }
+    return [];
+  });
 
-<div id="app" class="max-w-6xl mx-auto relative">
+  const [form, setForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    card: 'eco_linepay',
+    name: '',
+    amount: ''
+  });
+
+  // 編輯功能狀態
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
+  useEffect(() => {
+    localStorage.setItem('dbs_transactions_v7', JSON.stringify(transactions));
+  }, [transactions]);
+
+  // 更新卡別設定：支援 eco卡 的兩種模式
+  const CARD_CONFIG = {
+    eco_linepay: { 
+      name: 'eco 卡 (Line Pay 9%)', 
+      shortName: 'eco (Line Pay)',
+      baseRate: 0.01, 
+      bonusRate: 0.09, 
+      spendCap: 11111, 
+      bonusPointCap: 1000 
+    },
+    eco_overseas: { 
+      name: 'eco 卡 (海外 4%)', 
+      shortName: 'eco (海外)',
+      baseRate: 0.01, 
+      bonusRate: 0.04, 
+      spendCap: 15000, 
+      bonusPointCap: 600
+    },
+    legend: { 
+      name: '傳說對決卡', 
+      shortName: '傳說卡',
+      baseRate: 0.002, 
+      bonusRate: 0.098, 
+      spendCap: 11363, 
+      bonusPointCap: 1000 
+    }
+  };
+
+  // 卡別主題色系設定
+  const getCardTheme = (cardKey) => {
+    switch(cardKey) {
+      case 'legend': 
+        return { text: 'text-blue-700', badge: 'bg-blue-100 text-blue-700', border: 'border-l-4 border-l-blue-500' };
+      case 'eco_overseas': 
+        return { text: 'text-purple-700', badge: 'bg-purple-100 text-purple-700', border: 'border-l-4 border-l-purple-500' };
+      default: // eco_linepay
+        return { text: 'text-green-700', badge: 'bg-green-100 text-green-700', border: 'border-l-4 border-l-green-500' };
+    }
+  };
+
+  const formatDateLocal = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const callGeminiAPI = async (prompt) => {
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
     
-    <!-- 自訂提示視窗 (Modal) -->
-    <transition name="fade">
-        <div v-if="modal.show" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                <h3 class="text-xl font-bold mb-3 text-gray-900">{{ modal.title }}</h3>
-                <p class="text-gray-600 mb-6 leading-relaxed">{{ modal.message }}</p>
-                <div class="flex justify-end gap-3">
-                    <button v-if="modal.type === 'confirm'" @click="modal.onCancel" class="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-xl transition-colors">取消</button>
-                    <button @click="modal.onConfirm" class="px-5 py-2.5 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors shadow-sm">確定</button>
-                </div>
-            </div>
-        </div>
-    </transition>
-
-    <!-- 標題與簡介 -->
-    <div class="bg-white rounded-2xl shadow-lg p-6 mb-6 border-t-4 border-red-600">
-        <div class="flex items-center justify-between mb-4">
-            <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
-                <i class="ph ph-credit-card mr-3 text-red-600"></i>
-                星展信用卡回饋計算器
-            </h1>
-            <button @click="exportToExcel" class="hidden md:flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-                <i class="ph ph-file-xls mr-2 text-xl"></i>
-                匯出 Excel
-            </button>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 bg-gray-50 p-4 rounded-xl">
-            <div>
-                <strong class="text-red-600 text-base mb-1 block">💎 星展 eco 永續卡</strong>
-                <ul class="list-disc pl-5 space-y-1">
-                    <li>基本回饋：1% 無上限 (依結帳週期計算)</li>
-                    <li>加碼回饋：9% 上限 1000 點 (依日曆月計算)</li>
-                    <li>每月加碼最高可刷額度：<span class="font-bold text-gray-800">11,111</span> 元</li>
-                    <li>加碼回饋入帳日：次次月 1 日</li>
-                </ul>
-            </div>
-            <div>
-                <strong class="text-red-600 text-base mb-1 block">💎 星展 傳說對決聯名卡</strong>
-                <ul class="list-disc pl-5 space-y-1">
-                    <li>基本回饋：0.2% 無上限 (依結帳週期計算)</li>
-                    <li>加碼回饋 1：1% 無上限 (依日曆月計算)</li>
-                    <li>加碼回饋 2：8.8% 上限 1000 點 (依日曆月計算)</li>
-                    <li>每月加碼 2 最高可刷額度：<span class="font-bold text-gray-800">11,363</span> 元</li>
-                    <li>加碼回饋入帳日：次次月 1 日</li>
-                </ul>
-            </div>
-            <div class="md:col-span-2 mt-2 pt-2 border-t border-gray-200 text-xs flex flex-wrap gap-4">
-                <span>📅 結帳週期：每月 12 日 ~ 下月 11 日 (結帳日 11 日)</span>
-                <span>⏳ 回饋活動有效至：<span class="font-bold text-red-600">2026/06/30</span></span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Firebase 未設定提示 -->
-    <div v-if="!isValidConfig" class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-800 p-4 mb-8 rounded-r-2xl shadow-sm">
-        <p class="font-bold flex items-center text-lg mb-1">
-            <i class="ph ph-warning-circle mr-2 text-2xl text-yellow-600"></i>
-            系統提示：目前為本地預覽模式
-        </p>
-        <p class="text-sm">
-            尚未偵測到有效的 Firebase 設定，為避免系統崩潰已暫停連線。請在程式碼的 <code>firebaseConfig</code> 區塊中貼上您專案的金鑰，即可啟用雲端即時儲存功能。
-        </p>
-    </div>
-
-    <div class="flex flex-col lg:flex-row gap-8">
-        <!-- 左側：新增消費紀錄 -->
-        <div class="lg:w-1/3">
-            <div class="bg-white rounded-2xl shadow-lg p-6 sticky top-8">
-                <h2 class="text-xl font-bold mb-6 flex items-center text-gray-800">
-                    <i class="ph ph-plus-circle mr-2 text-red-600"></i> 新增消費紀錄
-                </h2>
-                
-                <form @submit.prevent="addRecord" class="space-y-5">
-                    <!-- 卡片選擇 -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">選擇卡片</label>
-                        <div class="grid grid-cols-2 gap-3">
-                            <label class="cursor-pointer">
-                                <input type="radio" v-model="form.card" value="eco" class="peer sr-only">
-                                <div class="text-center px-4 py-3 rounded-xl border-2 peer-checked:border-red-600 peer-checked:bg-red-50 peer-checked:text-red-700 hover:bg-gray-50 transition-colors font-medium">
-                                    星展 eco 卡
-                                </div>
-                            </label>
-                            <label class="cursor-pointer">
-                                <input type="radio" v-model="form.card" value="aov" class="peer sr-only">
-                                <div class="text-center px-4 py-3 rounded-xl border-2 peer-checked:border-red-600 peer-checked:bg-red-50 peer-checked:text-red-700 hover:bg-gray-50 transition-colors font-medium">
-                                    傳說對決卡
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- 消費日期 -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">消費日期 <span class="text-red-500">*</span></label>
-                        <input type="date" v-model="form.date" required max="2026-06-30"
-                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
-                    </div>
-
-                    <!-- 入帳起息日 (新增) -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">入帳起息日 (選填)</label>
-                        <input type="date" v-model="form.entryDate"
-                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
-                    </div>
-
-                    <!-- 消費金額 -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">消費金額 (NT$) <span class="text-red-500">*</span></label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">$</span>
-                            <input type="number" v-model="form.amount" required min="1" placeholder="輸入金額"
-                                class="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
-                        </div>
-                    </div>
-
-                    <!-- 備註 -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">備註 (選填)</label>
-                        <input type="text" v-model="form.desc" placeholder="例如：PChome購物"
-                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow">
-                    </div>
-
-                    <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center">
-                        <i class="ph ph-check-circle mr-2 text-xl"></i> 加入紀錄
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <!-- 右側：資料儀表板 -->
-        <div class="lg:w-2/3">
-            <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
-                <!-- 頁籤選單 -->
-                <div class="flex border-b border-gray-200 bg-gray-50">
-                    <button @click="activeTab = 'eco'" :class="['flex-1 py-4 px-6 text-center font-bold text-sm sm:text-base transition-colors border-b-2', activeTab === 'eco' ? 'border-red-600 text-red-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100']">
-                        💳 星展 eco 卡
-                    </button>
-                    <button @click="activeTab = 'aov'" :class="['flex-1 py-4 px-6 text-center font-bold text-sm sm:text-base transition-colors border-b-2', activeTab === 'aov' ? 'border-red-600 text-red-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100']">
-                        🎮 傳說對決卡
-                    </button>
-                    <button @click="activeTab = 'list'" :class="['flex-1 py-4 px-6 text-center font-bold text-sm sm:text-base transition-colors border-b-2', activeTab === 'list' ? 'border-red-600 text-red-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100']">
-                        📝 所有明細
-                    </button>
-                </div>
-
-                <!-- 內容區域 -->
-                <div class="p-6">
-                    
-                    <!-- 星展 eco 面板 -->
-                    <div v-show="activeTab === 'eco'">
-                        <div class="mb-8">
-                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                                <i class="ph ph-calendar-star mr-2 text-xl text-yellow-500"></i>
-                                日曆月加碼回饋 (9%)
-                            </h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="bg-gray-100 text-gray-700 text-sm">
-                                            <th class="p-3 rounded-tl-lg font-medium">消費月份</th>
-                                            <th class="p-3 font-medium text-right">累積消費</th>
-                                            <th class="p-3 font-medium text-right">剩餘可刷額度</th>
-                                            <th class="p-3 font-medium text-center">達 1000 點上限</th>
-                                            <th class="p-3 font-medium text-right">預估加碼點數</th>
-                                            <th class="p-3 rounded-tr-lg font-medium text-center">回饋入帳日</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <tr v-if="ecoMonthlyStats.length === 0">
-                                            <td colspan="6" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
-                                        </tr>
-                                        <tr v-for="stat in ecoMonthlyStats" :key="stat.month" class="hover:bg-gray-50">
-                                            <td class="p-3 font-medium">{{ stat.month }}</td>
-                                            <td :class="['p-3 text-right font-bold', stat.isExceeded ? 'text-red-600' : 'text-gray-800']">
-                                                {{ formatMoney(stat.total) }}
-                                            </td>
-                                            <td class="p-3 text-right text-green-600 font-bold">
-                                                {{ formatMoney(stat.remaining) }}
-                                            </td>
-                                            <td class="p-3 text-center">
-                                                <span v-if="stat.isCapped" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">是</span>
-                                                <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">否</span>
-                                            </td>
-                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
-                                            <td class="p-3 text-center text-gray-600 text-sm">{{ stat.payoutDate }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                                <i class="ph ph-arrows-clockwise mr-2 text-xl text-blue-500"></i>
-                                結帳週期基本回饋 (1%)
-                            </h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="bg-gray-100 text-gray-700 text-sm">
-                                            <th class="p-3 rounded-tl-lg font-medium">結帳週期</th>
-                                            <th class="p-3 font-medium">本期結帳日</th>
-                                            <th class="p-3 font-medium text-right">累積消費</th>
-                                            <th class="p-3 rounded-tr-lg font-medium text-right">預估基本點數</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <tr v-if="ecoBillingStats.length === 0">
-                                            <td colspan="4" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
-                                        </tr>
-                                        <tr v-for="stat in ecoBillingStats" :key="stat.cycleId" class="hover:bg-gray-50">
-                                            <td class="p-3 text-sm">{{ stat.cycleName }}</td>
-                                            <td class="p-3 text-gray-600 text-sm">{{ stat.billingDate }}</td>
-                                            <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(stat.total) }}</td>
-                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 傳說對決 面板 -->
-                    <div v-show="activeTab === 'aov'">
-                        <div class="mb-8">
-                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                                <i class="ph ph-calendar-star mr-2 text-xl text-yellow-500"></i>
-                                日曆月加碼回饋 (1% + 8.8%)
-                            </h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="bg-gray-100 text-gray-700 text-sm">
-                                            <th class="p-3 rounded-tl-lg font-medium">消費月份</th>
-                                            <th class="p-3 font-medium text-right">累積消費</th>
-                                            <th class="p-3 font-medium text-right">剩餘可刷額度(8.8%)</th>
-                                            <th class="p-3 font-medium text-center">達 1000 點上限</th>
-                                            <th class="p-3 font-medium text-right">預估加碼(1%)</th>
-                                            <th class="p-3 font-medium text-right">預估加碼(8.8%)</th>
-                                            <th class="p-3 rounded-tr-lg font-medium text-center">回饋入帳日</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <tr v-if="aovMonthlyStats.length === 0">
-                                            <td colspan="7" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
-                                        </tr>
-                                        <tr v-for="stat in aovMonthlyStats" :key="stat.month" class="hover:bg-gray-50">
-                                            <td class="p-3 font-medium">{{ stat.month }}</td>
-                                            <td :class="['p-3 text-right font-bold', stat.isExceeded ? 'text-red-600' : 'text-gray-800']">
-                                                {{ formatMoney(stat.total) }}
-                                            </td>
-                                            <td class="p-3 text-right text-green-600 font-bold">
-                                                {{ formatMoney(stat.remaining) }}
-                                            </td>
-                                            <td class="p-3 text-center">
-                                                <span v-if="stat.isCapped" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">是</span>
-                                                <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">否</span>
-                                            </td>
-                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points1 }} 點</td>
-                                            <td class="p-3 text-right text-purple-600 font-bold">{{ stat.points2 }} 點</td>
-                                            <td class="p-3 text-center text-gray-600 text-sm">{{ stat.payoutDate }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                                <i class="ph ph-arrows-clockwise mr-2 text-xl text-blue-500"></i>
-                                結帳週期基本回饋 (0.2%)
-                            </h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="bg-gray-100 text-gray-700 text-sm">
-                                            <th class="p-3 rounded-tl-lg font-medium">結帳週期</th>
-                                            <th class="p-3 font-medium">本期結帳日</th>
-                                            <th class="p-3 font-medium text-right">累積消費</th>
-                                            <th class="p-3 rounded-tr-lg font-medium text-right">預估基本點數</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <tr v-if="aovBillingStats.length === 0">
-                                            <td colspan="4" class="p-6 text-center text-gray-400">尚無消費紀錄</td>
-                                        </tr>
-                                        <tr v-for="stat in aovBillingStats" :key="stat.cycleId" class="hover:bg-gray-50">
-                                            <td class="p-3 text-sm">{{ stat.cycleName }}</td>
-                                            <td class="p-3 text-gray-600 text-sm">{{ stat.billingDate }}</td>
-                                            <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(stat.total) }}</td>
-                                            <td class="p-3 text-right text-blue-600 font-bold">{{ stat.points }} 點</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 所有明細 面板 -->
-                    <div v-show="activeTab === 'list'">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-lg font-bold text-gray-800">紀錄總覽</h3>
-                            <button @click="exportToExcel" class="md:hidden flex items-center bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors">
-                                <i class="ph ph-file-xls mr-1 text-lg"></i> 匯出
-                            </button>
-                        </div>
-                        <div class="overflow-x-auto pb-4"> <!-- pb-4 防止下拉選單被截斷 -->
-                            <table class="w-full text-left border-collapse whitespace-nowrap min-w-max">
-                                <thead>
-                                    <tr class="bg-gray-100 text-gray-700 text-sm">
-                                        <th class="p-3 rounded-tl-lg font-medium">卡別</th>
-                                        <th class="p-3 font-medium">消費日期</th>
-                                        <th class="p-3 font-medium">入帳起息日</th>
-                                        <th class="p-3 font-medium text-right">金額</th>
-                                        <th class="p-3 font-medium">備註</th>
-                                        <!-- 四個回饋明細欄位 -->
-                                        <th class="p-2 font-medium text-right text-xs text-green-700 border-l border-gray-200">eco 1%</th>
-                                        <th class="p-2 font-medium text-right text-xs text-green-700 border-r border-gray-200">eco 9%</th>
-                                        <th class="p-2 font-medium text-right text-xs text-purple-700">傳說 0.2%</th>
-                                        <th class="p-2 font-medium text-right text-xs text-purple-700">傳說 1%</th>
-                                        <th class="p-2 font-medium text-right text-xs text-purple-700 border-r border-gray-200">傳說 8.8%</th>
-                                        <th class="p-3 rounded-tr-lg font-medium text-center">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-200">
-                                    <tr v-if="sortedRecords.length === 0">
-                                        <td colspan="11" class="p-6 text-center text-gray-400">
-                                            <span v-if="isValidConfig">尚無任何消費紀錄 (或正在載入中...)</span>
-                                            <span v-else class="text-yellow-600"><i class="ph ph-warning mr-1"></i>無法讀取資料：未設定 Firebase</span>
-                                        </td>
-                                    </tr>
-                                    <transition-group name="fade">
-                                        <tr v-for="record in sortedRecords" :key="record.id" class="hover:bg-gray-50">
-                                            
-                                            <!-- ===== 編輯模式 ===== -->
-                                            <template v-if="editingId === record.id">
-                                                <td class="p-2">
-                                                    <select v-model="editForm.card" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
-                                                        <option value="eco">eco卡</option>
-                                                        <option value="aov">傳說卡</option>
-                                                    </select>
-                                                </td>
-                                                <td class="p-2">
-                                                    <input type="date" v-model="editForm.date" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
-                                                </td>
-                                                <td class="p-2">
-                                                    <input type="date" v-model="editForm.entryDate" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
-                                                </td>
-                                                <td class="p-2">
-                                                    <input type="number" v-model="editForm.amount" min="1" class="w-24 px-2 py-1.5 border border-red-300 rounded text-sm text-right focus:ring-red-500 focus:border-red-500">
-                                                </td>
-                                                <td class="p-2">
-                                                    <input type="text" v-model="editForm.desc" class="w-full px-2 py-1.5 border border-red-300 rounded text-sm focus:ring-red-500 focus:border-red-500">
-                                                </td>
-                                                <!-- 回饋預覽(編輯時為空) -->
-                                                <td colspan="5" class="p-2 text-center text-xs text-gray-400 border-x border-gray-200 bg-gray-100 rounded">
-                                                    儲存後重新計算...
-                                                </td>
-                                                <td class="p-2 text-center whitespace-nowrap">
-                                                    <button @click="saveEdit" class="text-green-600 hover:text-green-800 p-1 rounded-md hover:bg-green-100 transition-colors" title="儲存修改">
-                                                        <i class="ph ph-check-circle text-xl"></i>
-                                                    </button>
-                                                    <button @click="cancelEdit" class="text-gray-500 hover:text-gray-700 p-1 rounded-md hover:bg-gray-200 transition-colors ml-1" title="取消">
-                                                        <i class="ph ph-x-circle text-xl"></i>
-                                                    </button>
-                                                </td>
-                                            </template>
-
-                                            <!-- ===== 顯示模式 ===== -->
-                                            <template v-else>
-                                                <td class="p-3">
-                                                    <span :class="['px-2 py-1 rounded text-xs font-bold', record.card === 'eco' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700']">
-                                                        {{ record.card === 'eco' ? 'eco卡' : '傳說卡' }}
-                                                    </span>
-                                                </td>
-                                                <td class="p-3 text-sm">{{ record.date }}</td>
-                                                <td class="p-3 text-sm text-gray-500">{{ record.entryDate || '-' }}</td>
-                                                <td class="p-3 text-right font-bold text-gray-800">{{ formatMoney(record.amount) }}</td>
-                                                <td class="p-3 text-sm text-gray-600 max-w-[150px] truncate" :title="record.desc">{{ record.desc || '-' }}</td>
-                                                
-                                                <!-- 回饋點數計算結果 -->
-                                                <td class="p-2 text-right text-xs text-green-600 border-l border-gray-200">{{ record.ecoBase || '-' }}</td>
-                                                <td class="p-2 text-right text-xs text-green-600 border-r border-gray-200">{{ record.ecoBonus || '-' }}</td>
-                                                <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBase || '-' }}</td>
-                                                <td class="p-2 text-right text-xs text-purple-600">{{ record.aovBonus1 || '-' }}</td>
-                                                <td class="p-2 text-right text-xs text-purple-600 border-r border-gray-200">{{ record.aovBonus2 || '-' }}</td>
-                                                
-                                                <td class="p-3 text-center whitespace-nowrap">
-                                                    <button @click="startEdit(record)" class="text-blue-500 hover:text-blue-700 p-1 rounded-md hover:bg-blue-50 transition-colors" title="編輯">
-                                                        <i class="ph ph-pencil text-lg"></i>
-                                                    </button>
-                                                    <button @click="deleteRecord(record.id)" class="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-50 transition-colors ml-1" title="刪除">
-                                                        <i class="ph ph-trash text-lg"></i>
-                                                    </button>
-                                                </td>
-                                            </template>
-
-                                        </tr>
-                                    </transition-group>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 將原本的腳本替換為 type="module" 並引入 Firebase -->
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-analytics.js";
-    import { getDatabase, ref as dbRef, onValue, set, update, remove, push } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-    const firebaseConfig = {
-        apiKey: "AIzaSyDb5IN5p5Ey_mr33eMdFBqRjLQSMDROWdI",
-        authDomain: "dbslinepay.firebaseapp.com",
-        databaseURL: "https://dbslinepay-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "dbslinepay",
-        storageBucket: "dbslinepay.firebasestorage.app",
-        messagingSenderId: "686711292592",
-        appId: "1:686711292592:web:9de08e374641473fd2b175",
-        measurementId: "G-FPZKGRFJ13"
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      systemInstruction: { 
+        parts: [{ text: "你是一位專業的星展信用卡理財助手。請分析使用者的消費數據，給予簡短、專業且具備繁體中文口吻的理財建議。著重於如何最大化各卡別的加碼回饋。" }] 
+      }
     };
 
-    // 自動補齊 databaseURL (若 Firebase 控制台複製下來的設定中缺少這項)
-    if (firebaseConfig.projectId && !firebaseConfig.databaseURL) {
-        firebaseConfig.databaseURL = `https://${firebaseConfig.projectId}-default-rtdb.firebaseio.com`;
+    for (let i = 0; i < 5; i++) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('API Error');
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text;
+      } catch (error) {
+        if (i === 4) throw error;
+        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+      }
     }
+  };
 
-    // 檢查是否已填寫設定 (至少需包含 projectId)
-    const hasValidConfig = !!firebaseConfig.projectId;
+  const processedData = useMemo(() => {
+    const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const monthlyUsage = {}; 
 
-    let database = null;
-    let auth = null;
-    let analytics = null;
+    return sorted.map((t) => {
+      const dateObj = new Date(t.date);
+      const day = dateObj.getDate();
+      const amount = parseFloat(t.amount) || 0;
+      const configKey = CARD_CONFIG[t.card] ? t.card : 'eco_linepay'; 
+      const config = CARD_CONFIG[configKey];
 
-    if (hasValidConfig) {
-        try {
-            // Initialize Firebase
-            const firebaseApp = initializeApp(firebaseConfig);
-            analytics = getAnalytics(firebaseApp);
-            database = getDatabase(firebaseApp);
-            auth = getAuth(firebaseApp);
-        } catch (e) {
-            console.error("Firebase 初始化失敗:", e);
-        }
+      const consumeMonthKey = `${dateObj.getFullYear()}-${dateObj.getMonth()}_${configKey}`;
+      const prevSpend = monthlyUsage[consumeMonthKey] || 0;
+      
+      const eligibleForBonus = Math.max(0, Math.min(amount, config.spendCap - prevSpend));
+      const exceeded = Math.max(0, amount - eligibleForBonus);
+      monthlyUsage[consumeMonthKey] = prevSpend + amount;
+
+      let billYear = dateObj.getFullYear();
+      let billMonth = dateObj.getMonth();
+      if (day >= 12) {
+        billMonth += 1;
+        if (billMonth > 11) { billMonth = 0; billYear += 1; }
+      }
+      const billingCycleStr = `${billYear}/${String(billMonth + 1).padStart(2, '0')} 帳單`;
+
+      const rewardBase = Math.round(amount * config.baseRate);
+      const rewardBonus = Math.round(eligibleForBonus * config.bonusRate);
+      
+      const creditDateBonusObj = new Date(dateObj.getFullYear(), dateObj.getMonth() + 2, 1);
+      
+      return {
+        ...t,
+        card: configKey,
+        eligibleForBonus,
+        exceeded,
+        rewardBase,
+        rewardBonus,
+        totalReward: rewardBase + rewardBonus,
+        billingCycle: billingCycleStr,
+        creditDateBonus: formatDateLocal(creditDateBonusObj),
+        baseRateLabel: (config.baseRate * 100).toFixed(1) + '%',
+        bonusRateLabel: (config.bonusRate * 100).toFixed(1) + '%',
+        currentCap: config.spendCap
+      };
+    });
+  }, [transactions]);
+
+  const summary = useMemo(() => {
+    const config = CARD_CONFIG[activeTab];
+    const dataInMonth = processedData.filter(t => {
+      const d = new Date(t.date);
+      return d.getFullYear() === filterYear && d.getMonth() === filterMonth && t.card === activeTab;
+    });
+
+    const totalSpent = dataInMonth.reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+    const totalBonusPoints = dataInMonth.reduce((sum, t) => sum + t.rewardBonus, 0);
+    const remainingQuota = Math.max(0, config.spendCap - totalSpent);
+    const isReached = totalSpent >= config.spendCap;
+    const isPointsMax = totalBonusPoints >= config.bonusPointCap;
+
+    return {
+      totalSpent,
+      totalBonusPoints,
+      remainingQuota,
+      isReached,
+      isPointsMax,
+      percent: Math.min(100, (totalSpent / config.spendCap) * 100),
+      dataInMonth,
+      currentCap: config.spendCap,
+      bonusPointCap: config.bonusPointCap
+    };
+  }, [processedData, activeTab, filterMonth, filterYear]);
+
+  const handleAiAnalysis = async () => {
+    setIsAiLoading(true);
+    setShowAiModal(true);
+    try {
+      const spendDesc = summary.dataInMonth.map(t => `${t.name}($${t.amount})`).join(', ');
+      const prompt = `
+        當前分析卡別：${CARD_CONFIG[activeTab].name}
+        查詢月份：${filterYear}年${filterMonth + 1}月
+        目前已消費：$${summary.totalSpent}
+        本卡別加碼上限：$${summary.currentCap}
+        剩餘加碼額度：$${summary.remainingQuota}
+        目前已領加碼點數：${summary.totalBonusPoints} 點 (上限 ${summary.bonusPointCap} 點)
+        本月消費明細：${spendDesc || '無'}
+        
+        請根據以上資訊，給予這張卡片 3 點具體的理財策略建議，以極大化回饋。
+      `;
+      const result = await callGeminiAPI(prompt);
+      setAiAnalysis(result);
+    } catch (err) {
+      setAiAnalysis("AI 分析暫時無法使用，請稍後再試。");
+    } finally {
+      setIsAiLoading(false);
     }
+  };
 
-    // 取得全域 Vue 物件的方法
-    const { createApp, ref, computed, onMounted } = Vue;
-
-    // 常數設定
-    const ECO_LIMIT = 11111;
-    const ECO_BONUS_RATE = 0.09;
-    const ECO_BASE_RATE = 0.01;
+  const addTransaction = (e) => {
+    e.preventDefault();
+    if (!form.amount || !form.name) return;
+    setTransactions([...transactions, { ...form, amount: parseFloat(form.amount), id: Date.now() }]);
     
-    const AOV_LIMIT = 11363;
-    const AOV_BONUS_RATE_1 = 0.01;
-    const AOV_BONUS_RATE_2 = 0.088;
-    const AOV_BASE_RATE = 0.002;
+    const d = new Date(form.date);
+    setFilterYear(d.getFullYear());
+    setFilterMonth(d.getMonth());
+    setActiveTab(form.card);
+    setForm({ ...form, name: '', amount: '' });
+  };
 
-    const MAX_BONUS_POINTS = 1000;
+  const deleteTransaction = (id) => {
+    if(confirm("確定要刪除這筆紀錄嗎？")) {
+        setTransactions(transactions.filter(t => t.id !== id));
+    }
+  };
 
-    createApp({
-        setup() {
-            // 狀態
-            const records = ref([]);
-            const activeTab = ref('eco');
-            const isValidConfig = ref(hasValidConfig);
-            const form = ref({
-                card: 'eco',
-                date: new Date().toISOString().split('T')[0], // 預設今天
-                entryDate: '', // 新增：入帳起息日
-                amount: '',
-                desc: ''
-            });
+  // 編輯相關操作
+  const startEdit = (t) => {
+    setEditingId(t.id);
+    setEditForm({ date: t.date, card: t.card, name: t.name, amount: t.amount });
+  };
 
-            // 編輯功能狀態
-            const editingId = ref(null);
-            const editForm = ref({});
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
 
-            // 自訂提示視窗狀態
-            const modal = ref({
-                show: false,
-                type: 'alert',
-                title: '',
-                message: '',
-                onConfirm: () => {},
-                onCancel: () => {}
-            });
+  const saveEdit = () => {
+    if (!editForm.amount || !editForm.name) {
+      alert("請填寫完整的消費項目與金額");
+      return;
+    }
+    setTransactions(transactions.map(t => 
+      t.id === editingId ? { ...t, ...editForm, amount: parseFloat(editForm.amount) } : t
+    ));
+    setEditingId(null);
+    setEditForm({});
+  };
 
-            const showAlert = (title, message) => {
-                modal.value = {
-                    show: true,
-                    type: 'alert',
-                    title,
-                    message,
-                    onConfirm: () => { modal.value.show = false; }
-                };
-            };
+  const changeMonth = (offset) => {
+    let newMonth = filterMonth + offset;
+    let newYear = filterYear;
+    if (newMonth < 0) { newMonth = 11; newYear -= 1; }
+    else if (newMonth > 11) { newMonth = 0; newYear += 1; }
+    setFilterMonth(newMonth);
+    setFilterYear(newYear);
+  };
 
-            const showConfirm = (title, message, onConfirmCallback) => {
-                modal.value = {
-                    show: true,
-                    type: 'confirm',
-                    title,
-                    message,
-                    onConfirm: () => {
-                        modal.value.show = false;
-                        if (onConfirmCallback) onConfirmCallback();
-                    },
-                    onCancel: () => { modal.value.show = false; }
-                };
-            };
+  // 匯出 CSV
+  const exportToExcel = () => {
+    if (processedData.length === 0) {
+      alert("目前沒有資料可以匯出。");
+      return;
+    }
+    const headers = ["日期", "信用卡", "品名", "消費金額", "帳單週期", "基本回饋率", "基本點數", "加碼回饋率", "加碼點數", "加碼入帳日", "超額不計入金額"];
+    const rows = processedData.map(t => [
+      t.date, CARD_CONFIG[t.card].name, t.name, t.amount, t.billingCycle, t.baseRateLabel, t.rewardBase, t.bonusRateLabel, t.rewardBonus, t.creditDateBonus, t.exceeded
+    ]);
+    const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `星展回饋明細匯出_${formatDateLocal(new Date())}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-            // 初始化：自動匿名登入並監聽 Realtime Database
-            onMounted(() => {
-                if (!hasValidConfig) {
-                    console.warn("未偵測到 Firebase Config，為避免系統崩潰，目前已暫停連線服務。");
-                    return;
-                }
+  // 匯入 CSV
+  const importFromExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-                signInAnonymously(auth)
-                    .then(() => {
-                        // 登入成功後開始監聽資料
-                        const recordsDbRef = dbRef(database, 'records');
-                        
-                        onValue(recordsDbRef, (snapshot) => {
-                            const data = snapshot.val();
-                            if (data) {
-                                // 將 Firebase 的 Object 轉換為 Array
-                                records.value = Object.keys(data).map(key => ({
-                                    id: key, // 使用 Firebase 的 unique key 作為 ID
-                                    ...data[key]
-                                }));
-                            } else {
-                                records.value = [];
-                            }
-                        });
-                    })
-                    .catch((error) => {
-                        console.error("Firebase 匿名登入失敗:", error);
-                        showAlert("連線失敗", "登入資料庫失敗，請確認您的 Firebase 設定與權限是否正確開啟。");
-                    });
-            });
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const lines = text.split('\n').filter(l => l.trim() !== '');
+      if (lines.length <= 1) {
+        alert('檔案無資料或格式不符');
+        return;
+      }
 
-            // 工具函數
-            const formatMoney = (val) => {
-                return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(val);
-            };
+      const newTransactions = [];
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',');
+        if (row.length < 4) continue;
 
-            // 推算結帳週期資訊
-            const getBillingCycleInfo = (dateStr) => {
-                const d = new Date(dateStr);
-                let year = d.getFullYear();
-                let month = d.getMonth() + 1; // 1-12
-                let date = d.getDate();
+        let date = row[0].replace(/['"]/g, '').trim();
+        let cardStr = row[1].replace(/['"]/g, '').trim();
+        let name = row[2].replace(/['"]/g, '').trim();
+        let amount = parseFloat(row[3].replace(/['"]/g, '').trim());
 
-                // 結帳日為 11 號，週期為 12 號到次月 11 號
-                if (date >= 12) {
-                    month += 1;
-                    if (month > 12) {
-                        month = 1;
-                        year += 1;
-                    }
-                }
+        if (isNaN(amount) || !date || !name) continue;
 
-                let startMonth = month - 1;
-                let startYear = year;
-                if (startMonth === 0) {
-                    startMonth = 12;
-                    startYear -= 1;
-                }
-
-                const cycleId = `${year}-${String(month).padStart(2, '0')}`;
-                const cycleName = `${startYear}/${String(startMonth).padStart(2, '0')}/12 ~ ${year}/${String(month).padStart(2, '0')}/11`;
-                const billingDate = `${year}/${String(month).padStart(2, '0')}/11`;
-
-                return { cycleId, cycleName, billingDate };
-            };
-
-            // 推算加碼回饋入帳日 (次次月 1 日)
-            const getPayoutDate = (year, month) => {
-                let pMonth = month + 2;
-                let pYear = year;
-                if (pMonth > 12) {
-                    pMonth -= 12;
-                    pYear += 1;
-                }
-                return `${pYear}/${String(pMonth).padStart(2, '0')}/01`;
-            };
-
-            // 核心運算：計算日曆月統計 (加碼回饋)
-            const calcMonthlyStats = (cardType, limit, rate) => {
-                const map = {};
-                records.value.filter(r => r.card === cardType).forEach(r => {
-                    const d = new Date(r.date);
-                    const yyyy = d.getFullYear();
-                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                    const monthKey = `${yyyy}-${mm}`;
-
-                    if (!map[monthKey]) {
-                        map[monthKey] = {
-                            month: `${yyyy}/${mm}`,
-                            total: 0,
-                            payoutDate: getPayoutDate(yyyy, d.getMonth() + 1)
-                        };
-                    }
-                    map[monthKey].total += r.amount;
-                });
-
-                return Object.values(map).sort((a, b) => b.month.localeCompare(a.month)).map(stat => {
-                    const points = Math.min(Math.round(stat.total * rate), MAX_BONUS_POINTS);
-                    const remaining = Math.max(limit - stat.total, 0);
-                    const isExceeded = stat.total > limit;
-                    const isCapped = points >= MAX_BONUS_POINTS;
-
-                    return { ...stat, points, remaining, isExceeded, isCapped };
-                });
-            };
-
-            // 核心運算：計算結帳週期統計 (基本回饋)
-            const calcBillingStats = (cardType, rate) => {
-                const map = {};
-                records.value.filter(r => r.card === cardType).forEach(r => {
-                    const cycleInfo = getBillingCycleInfo(r.date);
-                    
-                    if (!map[cycleInfo.cycleId]) {
-                        map[cycleInfo.cycleId] = {
-                            cycleId: cycleInfo.cycleId,
-                            cycleName: cycleInfo.cycleName,
-                            billingDate: cycleInfo.billingDate,
-                            total: 0
-                        };
-                    }
-                    map[cycleInfo.cycleId].total += r.amount;
-                });
-
-                return Object.values(map).sort((a, b) => b.cycleId.localeCompare(a.cycleId)).map(stat => {
-                    return { ...stat, points: Math.round(stat.total * rate) };
-                });
-            };
-
-            // Computed Properties (加入單筆回饋換算)
-            const ecoMonthlyStats = computed(() => calcMonthlyStats('eco', ECO_LIMIT, ECO_BONUS_RATE));
-            const ecoBillingStats = computed(() => calcBillingStats('eco', ECO_BASE_RATE));
-            
-            const aovMonthlyStats = computed(() => {
-                const map = {};
-                records.value.filter(r => r.card === 'aov').forEach(r => {
-                    const d = new Date(r.date);
-                    const yyyy = d.getFullYear();
-                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                    const monthKey = `${yyyy}-${mm}`;
-
-                    if (!map[monthKey]) {
-                        map[monthKey] = {
-                            month: `${yyyy}/${mm}`,
-                            total: 0,
-                            payoutDate: getPayoutDate(yyyy, d.getMonth() + 1)
-                        };
-                    }
-                    map[monthKey].total += r.amount;
-                });
-
-                return Object.values(map).sort((a, b) => b.month.localeCompare(a.month)).map(stat => {
-                    const points1 = Math.round(stat.total * AOV_BONUS_RATE_1);
-                    const points2 = Math.min(Math.round(stat.total * AOV_BONUS_RATE_2), MAX_BONUS_POINTS);
-                    const remaining = Math.max(AOV_LIMIT - stat.total, 0);
-                    const isExceeded = stat.total > AOV_LIMIT;
-                    const isCapped = points2 >= MAX_BONUS_POINTS;
-
-                    return { ...stat, points1, points2, remaining, isExceeded, isCapped };
-                });
-            });
-
-            const aovBillingStats = computed(() => calcBillingStats('aov', AOV_BASE_RATE));
-
-            const sortedRecords = computed(() => {
-                // 先將所有紀錄依照日期「由舊到新」排序，以便準確計算每月的累積點數與上限
-                const chronologicalRecords = [...records.value].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-                // 準備物件來記錄每個月份「已經發放」的加碼點數
-                const monthlyBonusAcc = { eco: {}, aov: {} };
-
-                const processedRecords = chronologicalRecords.map(r => {
-                    const d = new Date(r.date);
-                    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                    
-                    const isEco = r.card === 'eco';
-                    const isAov = r.card === 'aov';
-
-                    // 基本回饋與無上限加碼，直接計算
-                    const ecoBase = isEco ? Math.round(r.amount * ECO_BASE_RATE) : 0;
-                    const aovBase = isAov ? Math.round(r.amount * AOV_BASE_RATE) : 0;
-                    const aovBonus1 = isAov ? Math.round(r.amount * AOV_BONUS_RATE_1) : 0;
-
-                    // 有上限的加碼回饋，需檢查該月剩餘額度
-                    let ecoBonus = 0;
-                    let aovBonus2 = 0;
-
-                    if (isEco) {
-                        if (!monthlyBonusAcc.eco[monthKey]) monthlyBonusAcc.eco[monthKey] = 0;
-                        const rawPoints = Math.round(r.amount * ECO_BONUS_RATE);
-                        const remainingCap = Math.max(0, MAX_BONUS_POINTS - monthlyBonusAcc.eco[monthKey]);
-                        ecoBonus = Math.min(rawPoints, remainingCap);
-                        monthlyBonusAcc.eco[monthKey] += ecoBonus; // 累加本筆發放點數
-                    } else if (isAov) {
-                        if (!monthlyBonusAcc.aov[monthKey]) monthlyBonusAcc.aov[monthKey] = 0;
-                        const rawPoints = Math.round(r.amount * AOV_BONUS_RATE_2);
-                        const remainingCap = Math.max(0, MAX_BONUS_POINTS - monthlyBonusAcc.aov[monthKey]);
-                        aovBonus2 = Math.min(rawPoints, remainingCap);
-                        monthlyBonusAcc.aov[monthKey] += aovBonus2; // 累加本筆發放點數
-                    }
-
-                    return {
-                        ...r,
-                        ecoBase,
-                        ecoBonus,
-                        aovBase,
-                        aovBonus1,
-                        aovBonus2
-                    };
-                });
-
-                // 回傳前，再將順序改回「由新到舊」以符合明細表的顯示習慣
-                return processedRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
-            });
-
-            // Methods: 新增紀錄到 Firebase
-            const addRecord = () => {
-                if (!form.value.date || !form.value.amount || form.value.amount <= 0) return;
-                
-                if (!hasValidConfig) {
-                    showAlert("功能停用", "請先確認 Firebase 連線。");
-                    return;
-                }
-
-                if (new Date(form.value.date) > new Date('2026-06-30')) {
-                    showAlert("日期無效", "回饋活動有效至 2026/06/30，請選擇此日期之前的日期！");
-                    return;
-                }
-
-                // 產生新的 push key ref
-                const newRecordRef = push(dbRef(database, 'records'));
-                
-                // 寫入資料到 Firebase
-                set(newRecordRef, {
-                    card: form.value.card,
-                    date: form.value.date,
-                    entryDate: form.value.entryDate || '', // 寫入入帳起息日
-                    amount: Number(form.value.amount),
-                    desc: form.value.desc
-                });
-
-                // 重置部分表單 (保留日期方便連續輸入)
-                form.value.amount = '';
-                form.value.desc = '';
-                form.value.entryDate = '';
-            };
-
-            // Methods: 編輯紀錄
-            const startEdit = (record) => {
-                editingId.value = record.id;
-                // 深拷貝一份資料給編輯表單使用
-                editForm.value = { ...record };
-            };
-
-            const cancelEdit = () => {
-                editingId.value = null;
-                editForm.value = {};
-            };
-
-            const saveEdit = () => {
-                if (!editForm.value.date || !editForm.value.amount || editForm.value.amount <= 0) {
-                    showAlert("資料不全", "請確認消費日期與金額填寫正確且大於 0。");
-                    return;
-                }
-                
-                if (new Date(editForm.value.date) > new Date('2026-06-30')) {
-                    showAlert("日期無效", "回饋活動有效至 2026/06/30，請選擇此日期之前的日期！");
-                    return;
-                }
-
-                const targetRef = dbRef(database, `records/${editingId.value}`);
-                // 僅更新特定欄位到資料庫
-                update(targetRef, {
-                    card: editForm.value.card,
-                    date: editForm.value.date,
-                    entryDate: editForm.value.entryDate || '',
-                    amount: Number(editForm.value.amount),
-                    desc: editForm.value.desc || ''
-                }).then(() => {
-                    cancelEdit(); // 成功後關閉編輯狀態
-                }).catch((error) => {
-                    showAlert("更新失敗", error.message);
-                });
-            };
-
-            // Methods: 從 Firebase 刪除紀錄
-            const deleteRecord = (id) => {
-                if (!hasValidConfig) return;
-
-                showConfirm("確定刪除？", "您確定要刪除這筆紀錄嗎？此動作將同步至雲端且無法復原。", () => {
-                    const targetRef = dbRef(database, `records/${id}`);
-                    remove(targetRef);
-                });
-            };
-
-            // Methods: 匯出 Excel
-            const exportToExcel = () => {
-                if (records.value.length === 0) {
-                    showAlert("無法匯出", "目前沒有任何資料可以匯出。");
-                    return;
-                }
-
-                // 表頭加入「入帳起息日」與更新的回饋欄位
-                let csvContent = "卡片名稱,消費日期,入帳起息日,消費金額(NT$),備註,歸屬日曆月份,加碼回饋入帳日,歸屬結帳週期,eco基本回饋(1%),eco加碼回饋(9%),傳說基本回饋(0.2%),傳說加碼回饋1(1%),傳說加碼回饋2(8.8%),本筆基本回饋統計,本筆加碼回饋統計\n";
-                
-                let totalAmount = 0;
-                let totalEcoBase = 0, totalEcoBonus = 0, totalAovBase = 0, totalAovBonus1 = 0, totalAovBonus2 = 0;
-                let totalRowBase = 0, totalRowBonus = 0;
-
-                sortedRecords.value.forEach(r => {
-                    const cardName = r.card === 'eco' ? '星展eco卡' : '傳說對決卡';
-                    const d = new Date(r.date);
-                    const yyyy = d.getFullYear();
-                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                    const calendarMonth = `${yyyy}/${mm}`;
-                    const payoutDate = getPayoutDate(yyyy, d.getMonth() + 1);
-                    const billingInfo = getBillingCycleInfo(r.date);
-                    const desc = r.desc ? r.desc.replace(/,/g, '，') : ''; 
-                    const entryDate = r.entryDate || '-';
-
-                    const rowBase = r.ecoBase + r.aovBase;
-                    const rowBonus = r.ecoBonus + r.aovBonus1 + r.aovBonus2;
-
-                    totalAmount += r.amount;
-                    totalEcoBase += r.ecoBase;
-                    totalEcoBonus += r.ecoBonus;
-                    totalAovBase += r.aovBase;
-                    totalAovBonus1 += r.aovBonus1;
-                    totalAovBonus2 += r.aovBonus2;
-                    totalRowBase += rowBase;
-                    totalRowBonus += rowBonus;
-
-                    csvContent += `${cardName},${r.date},${entryDate},${r.amount},${desc},${calendarMonth},${payoutDate},${billingInfo.cycleName},${r.ecoBase},${r.ecoBonus},${r.aovBase},${r.aovBonus1},${r.aovBonus2},${rowBase},${rowBonus}\n`;
-                });
-
-                // 加入總計行
-                csvContent += `總計,-,-,${totalAmount},-,-,-,-,${totalEcoBase},${totalEcoBonus},${totalAovBase},${totalAovBonus1},${totalAovBonus2},${totalRowBase},${totalRowBonus}\n`;
-
-                const BOM = "\uFEFF";
-                const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                const url = URL.createObjectURL(blob);
-                
-                link.setAttribute("href", url);
-                link.setAttribute("download", `星展信用卡回饋明細_${new Date().toISOString().split('T')[0]}.csv`);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            };
-
-            return {
-                records, form, activeTab, isValidConfig, modal,
-                editingId, editForm, startEdit, cancelEdit, saveEdit,
-                ecoMonthlyStats, ecoBillingStats,
-                aovMonthlyStats, aovBillingStats,
-                sortedRecords,
-                addRecord, deleteRecord, exportToExcel, formatMoney
-            };
+        let cardKey = 'eco_linepay'; 
+        if (cardStr.includes('傳說')) {
+          cardKey = 'legend';
+        } else if (cardStr.includes('海外') || cardStr.includes('4%')) {
+          cardKey = 'eco_overseas';
+        } else if (cardStr.includes('eco') || cardStr.includes('Line Pay') || cardStr.includes('9%')) {
+          cardKey = 'eco_linepay';
         }
-    }).mount('#app');
-</script>
-</body>
-</html>
+
+        newTransactions.push({
+          id: Date.now() + i + Math.random(),
+          date,
+          card: cardKey,
+          name,
+          amount
+        });
+      }
+
+      if (newTransactions.length > 0) {
+        setTransactions(prev => [...prev, ...newTransactions]);
+        alert(`成功匯入 ${newTransactions.length} 筆資料！`);
+      } else {
+        alert('找不到有效的消費紀錄，請確認檔案格式是否為先前的匯出檔。');
+      }
+    };
+    reader.readAsText(file);
+    if(fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
+      <input type="file" accept=".csv" ref={fileInputRef} onChange={importFromExcel} className="hidden" />
+
+      {/* AI 分析 Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="bg-gradient-to-r from-red-600 to-pink-600 p-6 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2">
+                <Sparkles size={24} />
+                <h3 className="font-black text-lg">AI 智慧分析建議</h3>
+              </div>
+              <button onClick={() => setShowAiModal(false)} className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-8">
+              {isAiLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <Loader2 size={48} className="text-red-500 animate-spin" />
+                  <p className="text-slate-400 font-bold animate-pulse">理財助手正在分析您的消費習慣...</p>
+                </div>
+              ) : (
+                <div className="prose prose-slate max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
+                    {aiAnalysis}
+                  </div>
+                  <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3">
+                    <Target size={18} className="text-red-500 mt-1 shrink-0" />
+                    <p className="text-[11px] text-slate-400">
+                        AI 建議基於您輸入的數據計算得出。信用卡權益可能隨銀行公告變更，實際回饋請以官方為準。
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <nav className="bg-red-600 text-white p-4 sticky top-0 z-50 shadow-md">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <CreditCard size={24} />
+            <h1 className="text-xl font-bold tracking-tight">星展雙卡回饋計算器 <span className="text-xs font-normal opacity-70 italic">v2026.4</span></h1>
+          </div>
+          <div className="flex bg-red-700 rounded-lg p-1">
+            <button onClick={() => setViewMode('pc')} className={`p-1.5 rounded ${viewMode === 'pc' ? 'bg-white text-red-600' : 'text-white'}`}><Monitor size={18}/></button>
+            <button onClick={() => setViewMode('mobile')} className={`p-1.5 rounded ${viewMode === 'mobile' ? 'bg-white text-red-600' : 'text-white'}`}><Smartphone size={18}/></button>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto p-4 space-y-6">
+        {/* Dashboard Section */}
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end mb-6 gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-slate-500 mb-3">
+                  <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-slate-100 rounded-full transition"><ChevronLeft size={18}/></button>
+                  <h2 className="text-lg font-black text-slate-800">{filterYear}年 {filterMonth + 1}月 消費統計</h2>
+                  <button onClick={() => changeMonth(1)} className="p-1 hover:bg-slate-100 rounded-full transition"><ChevronRight size={18}/></button>
+                </div>
+                {/* Tabs */}
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(CARD_CONFIG).map(cardKey => (
+                    <button 
+                      key={cardKey}
+                      onClick={() => setActiveTab(cardKey)}
+                      className={`px-4 py-2 rounded-full text-xs font-bold transition shadow-sm ${activeTab === cardKey ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                    >
+                      {CARD_CONFIG[cardKey].shortName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-right flex flex-col items-start xl:items-end w-full xl:w-auto">
+                <div className="flex items-center gap-2 mb-1 w-full justify-between xl:justify-end">
+                    <span className="text-xs font-bold text-slate-400 block xl:hidden">{CARD_CONFIG[activeTab].name}</span>
+                    <button 
+                        onClick={handleAiAnalysis}
+                        className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg shadow-red-200 hover:scale-105 transition-transform active:scale-95"
+                    >
+                        <Sparkles size={12} /> AI 智慧分析 ✨
+                    </button>
+                </div>
+                <div className="mt-2 xl:mt-0">
+                    <span className={`text-3xl font-black ${summary.isReached ? 'text-red-600' : 'text-slate-800'}`}>${summary.totalSpent.toLocaleString()}</span>
+                    <span className="text-slate-400 text-sm font-medium ml-1"> / ${summary.currentCap.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="w-full bg-slate-100 h-5 rounded-full overflow-hidden mb-5 border border-slate-100 shadow-inner">
+              <div className={`h-full transition-all duration-1000 ease-out ${summary.isReached ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${summary.percent}%` }}></div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3 bg-blue-50 p-3 rounded-2xl">
+                <div className="bg-blue-600 text-white p-2 rounded-xl"><TrendingUp size={20}/></div>
+                <div>
+                  <p className="text-[10px] text-blue-600 font-bold uppercase">加碼餘額</p>
+                  <p className="text-sm font-black text-slate-800">還剩 <span className="text-blue-600">${summary.remainingQuota.toLocaleString()}</span> 可刷</p>
+                </div>
+              </div>
+              <div className={`flex items-center gap-3 p-3 rounded-2xl ${summary.isPointsMax ? 'bg-red-50' : 'bg-green-50'}`}>
+                <div className={`${summary.isPointsMax ? 'bg-red-600' : 'bg-green-600'} text-white p-2 rounded-xl`}>
+                  {summary.isPointsMax ? <AlertCircle size={20}/> : <CheckCircle2 size={20}/>}
+                </div>
+                <div>
+                  <p className={`text-[10px] font-bold uppercase ${summary.isPointsMax ? 'text-red-600' : 'text-green-600'}`}>本月點數狀態</p>
+                  <p className="text-sm font-black text-slate-800">
+                    {summary.isPointsMax ? `已達 ${summary.bonusPointCap} 點上限` : `目前加碼已領: ${summary.totalBonusPoints} 點`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl flex flex-col justify-between relative overflow-hidden group">
+            <div className="absolute -right-8 -top-8 text-white/5 group-hover:text-white/10 transition-colors">
+              <CreditCard size={180} />
+            </div>
+            <div className="relative z-10">
+              <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">總累積預估回饋 (含基本+加碼)</h3>
+              <p className="text-5xl font-black text-white">
+                {Math.round(processedData.reduce((s, t) => s + t.totalReward, 0)).toLocaleString()} <span className="text-lg font-normal text-slate-500">點</span>
+              </p>
+            </div>
+            <div className="relative z-10 mt-8 flex flex-col gap-3">
+                <div className="flex gap-3">
+                    <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition font-bold">
+                      <Upload size={18} /> 匯入紀錄
+                    </button>
+                    <button onClick={exportToExcel} className="flex-[2] bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition font-bold shadow-lg">
+                      <Download size={18} /> 匯出 Excel
+                    </button>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-400 p-2 bg-white/5 rounded-lg">
+                    <Target size={14} className="text-red-500 shrink-0" />
+                    <span>數據僅供參考，請隨時匯出備份以防資料遺失</span>
+                </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Input Form */}
+        <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+          <form onSubmit={addTransaction} className="grid grid-cols-1 lg:grid-cols-4 gap-5 items-end">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">消費日期</label>
+              <div className="relative">
+                <input type="date" max="2026-06-30" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="w-full p-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-red-500 outline-none font-bold text-sm" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">選擇計算模式</label>
+              <select value={form.card} onChange={e => setForm({...form, card: e.target.value})} className="w-full p-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-red-500 outline-none appearance-none font-bold text-[13px]">
+                <option value="eco_linepay">星展 eco - Line Pay 9% (上限 11,111)</option>
+                <option value="eco_overseas">星展 eco - 海外/指定 4% (上限 15,000)</option>
+                <option value="legend">傳說對決卡 - (0.2% + 9.8%)</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">消費項目</label>
+              <input type="text" placeholder="輸入品名..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-red-500 outline-none font-bold text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">金額 (TWD)</label>
+              <div className="flex gap-3">
+                <input type="number" placeholder="0" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="w-full p-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-red-500 outline-none font-black text-xl" />
+                <button type="submit" className="bg-red-600 hover:bg-red-700 text-white p-4 px-6 rounded-2xl transition shadow-lg shadow-red-200 active:scale-95"><Plus size={24}/></button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        {/* Transactions List */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between px-3">
+            <h3 className="font-black text-slate-700 flex items-center gap-2"><History size={20} /> 詳細回饋清單</h3>
+            <div className="hidden md:flex gap-6">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                    <FileText size={14} className="text-slate-300"/> 基本隨帳單入帳
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-red-400">
+                    <Calendar size={14} className="text-red-200"/> 加碼次次月1日
+                </div>
+            </div>
+          </div>
+
+          {viewMode === 'pc' ? (
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-x-auto">
+              <table className="w-full text-left text-sm border-collapse min-w-[1050px]">
+                <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[10px] tracking-widest">
+                  <tr>
+                    <th className="p-5">日期</th>
+                    <th className="p-5">卡別模式</th>
+                    <th className="p-5">品名</th>
+                    <th className="p-5">金額</th>
+                    <th className="p-5">帳單週期</th>
+                    <th className="p-5">基本回饋</th>
+                    <th className="p-5 text-red-600">加碼回饋</th>
+                    <th className="p-5">加碼入帳日</th>
+                    <th className="p-5 text-center">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {processedData.length === 0 && <tr><td colSpan="9" className="p-20 text-center text-slate-300 font-bold">目前無任何交易紀錄</td></tr>}
+                  {processedData.map((t) => {
+                    const theme = getCardTheme(t.card);
+                    const isEditing = editingId === t.id;
+
+                    if (isEditing) {
+                      return (
+                        <tr key={t.id} className="bg-blue-50/50">
+                          <td className="p-3"><input type="date" value={editForm.date} onChange={e=>setEditForm({...editForm, date: e.target.value})} className="w-full p-2 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" /></td>
+                          <td className="p-3">
+                            <select value={editForm.card} onChange={e=>setEditForm({...editForm, card: e.target.value})} className="w-full p-2 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                              <option value="eco_linepay">eco (Line Pay)</option>
+                              <option value="eco_overseas">eco (海外)</option>
+                              <option value="legend">傳說卡</option>
+                            </select>
+                          </td>
+                          <td className="p-3"><input type="text" value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} className="w-full p-2 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" /></td>
+                          <td className="p-3"><input type="number" value={editForm.amount} onChange={e=>setEditForm({...editForm, amount: e.target.value})} className="w-full p-2 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" /></td>
+                          <td colSpan="4" className="p-3 text-center text-slate-400 text-xs font-bold italic">點擊儲存後將重新計算回饋</td>
+                          <td className="p-3">
+                            <div className="flex justify-center gap-2">
+                                <button onClick={saveEdit} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition shadow-sm"><CheckCircle2 size={16}/></button>
+                                <button onClick={cancelEdit} className="p-2 bg-slate-200 text-slate-500 rounded-xl hover:bg-slate-300 transition shadow-sm"><X size={16}/></button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+
+                    return (
+                      <tr key={t.id} className={`hover:bg-slate-50/80 transition-colors group ${theme.border}`}>
+                        <td className="p-5 whitespace-nowrap font-bold text-slate-500">{t.date}</td>
+                        <td className="p-5">
+                          <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase ${theme.badge}`}>
+                            {CARD_CONFIG[t.card].shortName}
+                          </span>
+                        </td>
+                        <td className={`p-5 font-black ${theme.text}`}>{t.name}</td>
+                        <td className="p-5 font-black text-lg">${parseInt(t.amount).toLocaleString()}</td>
+                        <td className="p-5 whitespace-nowrap"><span className="text-[11px] font-bold text-slate-400">{t.billingCycle}</span></td>
+                        <td className="p-5">
+                          <div className="flex flex-col">
+                              <span className="font-bold text-slate-600">+{t.rewardBase}</span>
+                              <span className="text-[9px] text-slate-300 font-bold">{t.baseRateLabel}</span>
+                          </div>
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-col">
+                            <span className="font-black text-red-600">+{t.rewardBonus}</span>
+                            <span className="text-[9px] text-red-300 font-bold">{t.bonusRateLabel}</span>
+                            {t.exceeded > 0 && <span className="text-[9px] text-red-500 font-black mt-0.5">超額: ${t.exceeded.toLocaleString()}</span>}
+                          </div>
+                        </td>
+                        <td className="p-5 text-slate-400 italic text-[11px] font-bold">{t.creditDateBonus}</td>
+                        <td className="p-5">
+                            <div className="flex justify-center gap-1.5">
+                                <button onClick={() => startEdit(t)} className="text-slate-300 hover:text-blue-500 transition-colors p-2 hover:bg-blue-50 rounded-xl">
+                                    <Pencil size={18} />
+                                </button>
+                                <button onClick={() => deleteTransaction(t.id)} className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-xl">
+                                    <Trash2 size={18} />
+                                </button>
+                            </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {processedData.length === 0 && <div className="p-20 text-center text-slate-300 bg-white rounded-3xl border border-dashed border-slate-300 font-bold italic">尚無資料...</div>}
+              {processedData.slice().reverse().map((t) => {
+                const theme = getCardTheme(t.card);
+                const isEditing = editingId === t.id;
+
+                if (isEditing) {
+                    return (
+                        <div key={t.id} className="bg-white p-5 rounded-[2rem] shadow-sm border-2 border-blue-200">
+                            <div className="flex flex-col gap-3">
+                                <input type="date" value={editForm.date} onChange={e=>setEditForm({...editForm, date: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500" />
+                                <select value={editForm.card} onChange={e=>setEditForm({...editForm, card: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500">
+                                    <option value="eco_linepay">eco (Line Pay)</option>
+                                    <option value="eco_overseas">eco (海外)</option>
+                                    <option value="legend">傳說卡</option>
+                                </select>
+                                <input type="text" value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} placeholder="品名" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500" />
+                                <input type="number" value={editForm.amount} onChange={e=>setEditForm({...editForm, amount: e.target.value})} placeholder="金額" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500" />
+                                <div className="flex justify-end gap-3 mt-3">
+                                    <button onClick={cancelEdit} className="px-5 py-2.5 bg-slate-200 text-slate-600 rounded-xl font-bold">取消</button>
+                                    <button onClick={saveEdit} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-200">儲存變更</button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div key={t.id} className={`bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden transition active:scale-[0.98] ${theme.border}`}>
+                      {t.exceeded > 0 && <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] px-4 py-1.5 rounded-bl-2xl font-black shadow-sm">額度已爆</div>}
+                      <div className="flex justify-between items-start mb-5">
+                        <div>
+                          <div className="text-[10px] text-slate-400 mb-1 flex items-center gap-1.5 font-bold uppercase tracking-widest">
+                            <Calendar size={12} className="text-slate-300"/> {t.date} 
+                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black ${theme.badge}`}>
+                              {CARD_CONFIG[t.card].shortName}
+                            </span>
+                          </div>
+                          <h4 className={`font-black text-xl ${theme.text}`}>{t.name}</h4>
+                        </div>
+                        <div className="text-2xl font-black text-slate-900">${parseInt(t.amount).toLocaleString()}</div>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-2 pt-5 border-t border-slate-50">
+                        <div className="bg-slate-50 p-2.5 rounded-2xl text-center">
+                          <p className="text-[8px] text-slate-400 font-black mb-1 uppercase tracking-tighter">基本 ({t.baseRateLabel})</p>
+                          <p className="text-sm font-black text-slate-700">+{t.rewardBase}</p>
+                        </div>
+                        <div className="bg-red-50 p-2.5 rounded-2xl text-center col-span-2">
+                          <p className="text-[8px] text-red-400 font-black mb-1 uppercase tracking-tighter">加碼 ({t.bonusRateLabel})</p>
+                          <div className="flex justify-between items-center px-2">
+                              <span className="text-sm font-black text-red-600">+{t.rewardBonus}</span>
+                              <span className="text-[9px] font-bold text-red-300 italic">{t.creditDateBonus} 入帳</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-slate-300">{t.billingCycle}</span>
+                          <div className="flex gap-2">
+                              <button onClick={() => startEdit(t)} className="p-2 text-slate-300 hover:text-blue-500 transition-colors">
+                                <Pencil size={18} />
+                              </button>
+                              <button onClick={() => deleteTransaction(t.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                                <Trash2 size={18} />
+                              </button>
+                          </div>
+                      </div>
+                    </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur-xl border border-slate-200 p-2 px-6 rounded-full flex gap-6 shadow-2xl z-50 md:hidden">
+        <button onClick={handleAiAnalysis} className="flex flex-col items-center gap-1 text-red-600 font-black">
+            <Sparkles size={22} />
+            <span className="text-[10px]">AI 分析</span>
+        </button>
+        <button onClick={() => fileInputRef.current.click()} className="flex flex-col items-center gap-1 text-slate-500 font-black">
+            <Upload size={22} />
+            <span className="text-[10px]">匯入</span>
+        </button>
+        <button onClick={exportToExcel} className="flex flex-col items-center gap-1 text-slate-500 font-black">
+            <Download size={22} />
+            <span className="text-[10px]">匯出</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default App;
