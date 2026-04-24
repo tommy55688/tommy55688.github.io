@@ -78,7 +78,6 @@
             const [filterYear, setFilterYear] = useState(today.getFullYear());
             const [filterMonth, setFilterMonth] = useState(today.getMonth());
 
-            // 新增：核對小幫手專屬的年份/月份狀態，預設與儀表板同步
             const [auditYear, setAuditYear] = useState(today.getFullYear());
             const [auditMonth, setAuditMonth] = useState(today.getMonth());
 
@@ -160,10 +159,15 @@
             };
 
             const processedData = useMemo(() => {
-                const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+                // 將這裡的排序從升序改為降序，讓最新的日期排在最前面
+                const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
                 const monthlyUsage = {}; 
 
-                return sorted.map((t) => {
+                // 注意：由於現在是降序（最新的在前面），在計算每月的累積額度時，
+                // 我們需要先將陣列反轉回升序，計算完各筆的累積狀態後，再反轉回降序顯示。
+                const ascendingSorted = [...sorted].reverse();
+                
+                const calculatedDataAscending = ascendingSorted.map((t) => {
                     const dateObj = new Date(t.date);
                     const day = dateObj.getDate();
                     const amount = parseFloat(t.amount) || 0;
@@ -177,7 +181,6 @@
                     const exceeded = Math.max(0, amount - eligibleForBonus);
                     monthlyUsage[consumeMonthKey] = prevSpend + amount;
 
-                    // 結帳日為11日，帳單週期為本月12日至次月11日
                     let billYear = dateObj.getFullYear();
                     let billMonth = dateObj.getMonth();
                     if (day >= 12) {
@@ -199,6 +202,10 @@
                         billMonth: billMonth
                     };
                 });
+
+                // 計算完畢後，再次反轉回降序，供列表顯示
+                return calculatedDataAscending.reverse();
+
             }, [transactions]);
 
             const summary = useMemo(() => {
@@ -217,7 +224,6 @@
                 return { totalSpent, totalBonusPoints, remainingQuota, isReached, isPointsMax, percent: Math.min(100, (totalSpent / config.spendCap) * 100), dataInMonth, currentCap: config.spendCap, bonusPointCap: config.bonusPointCap };
             }, [processedData, activeTab, filterMonth, filterYear]);
 
-            // 計算帳單積點核對小幫手 (根據 auditYear 與 auditMonth)
             const filterBillingCycleStr = `${auditYear}/${String(auditMonth + 1).padStart(2, '0')} 帳單`;
             
             const allCardsBaseThisBill = useMemo(() => {
@@ -257,7 +263,6 @@
                 const d = new Date(form.date);
                 setFilterYear(d.getFullYear());
                 setFilterMonth(d.getMonth());
-                // 同步更新核對小幫手的月份
                 setAuditYear(d.getFullYear());
                 setAuditMonth(d.getMonth());
                 setActiveTab(form.card);
@@ -305,6 +310,7 @@
 
             const exportToExcel = () => {
                 if (processedData.length === 0) { alert("目前沒有資料可以匯出。"); return; }
+                // 匯出時也維持最新的在最上面
                 const headers = ["日期", "信用卡", "品名", "消費金額", "帳單週期", "基本回饋率", "基本點數", "加碼回饋率", "加碼點數", "加碼入帳日", "超額不計入金額"];
                 const rows = processedData.map(t => [t.date, CARD_CONFIG[t.card].name, t.name, t.amount, t.billingCycle, t.baseRateLabel, t.rewardBase, t.bonusRateLabel, t.rewardBonus, t.creditDateBonus, t.exceeded]);
                 const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
@@ -763,7 +769,8 @@
                             ) : (
                                 <div className="grid grid-cols-1 gap-4">
                                     {processedData.length === 0 && <div className="p-20 text-center text-slate-300 bg-white rounded-3xl border border-dashed border-slate-300 font-bold italic">尚無資料...</div>}
-                                    {processedData.slice().reverse().map((t) => {
+                                    {/* 移除 slice().reverse()，因為資料已經是降序排列 */}
+                                    {processedData.map((t) => {
                                         const theme = getCardTheme(t.card);
                                         const isEditing = editingId === t.id;
 
